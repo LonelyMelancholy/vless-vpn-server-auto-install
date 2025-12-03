@@ -1,0 +1,110 @@
+{
+  "log": {
+    "access": "/var/log/xray/access.log",
+    "error": "/var/log/xray/error.log",
+    "loglevel": "warning",
+    "dnsLog": false,
+    "maskAddress": ""
+  },
+
+  "dns": {
+    "servers": [
+      "https+local://1.1.1.1/dns-query",
+      "https+local://8.8.8.8/dns-query"
+    ]
+  },
+
+  "api": {
+    "tag": "api",
+    "listen": "127.0.0.1:8080",
+    "services": ["StatsService"]
+  },
+
+  "inbounds": [
+    {
+      "tag": "Vless",
+      "listen": "0.0.0.0",
+      "port": 443,
+      "protocol": "vless",
+      "settings": {
+        "decryption": "none",
+        "clients": [
+          {
+            "email": "name_VPN",
+            "flow": "xtls-rprx-vision",
+            "id": "uuid_uuid"
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "realitySettings": {
+          "dest": "m.vk.ru:443",
+          "privateKey": "privatkey",
+          "serverNames": ["m.vk.ru"],
+          "shortIds": ["shortid"],
+          "show": false,
+          "xver": 0
+        },
+        "tcpSettings": {
+          "acceptProxyProtocol": false,
+          "header": {
+            "type": "none"
+          }
+        }
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": ["http", "tls", "quic"],
+        "metadataOnly": false,
+        "routeOnly": true
+      }
+    }
+  ],
+
+  "routing": {
+    "domainStrategy": "IPOnDemand",
+    "rules": [
+      {
+        "type": "field",
+        "outboundTag": "blocked",
+        "ip": ["geoip:private", "geoip:ru"]
+      },
+      {
+        "type": "field",
+        "outboundTag": "blocked",
+        "protocol": ["bittorrent"]
+      }
+    ]
+  },
+
+  "outbounds": [
+    {
+      "tag": "direct",
+      "protocol": "freedom"
+    },
+    {
+      "tag": "blocked",
+      "protocol": "blackhole"
+    }
+  ],
+
+  "stats": {},
+
+  "policy": {
+    "levels": {
+      "0": {
+        "statsUserDownlink": true,
+        "statsUserUplink": true,
+        "statsUserOnline": true
+      }
+    },
+    "system": {
+      "statsInboundDownlink": true,
+      "statsInboundUplink": true,
+      "statsOutboundDownlink": true,
+      "statsOutboundUplink": true
+    }
+  }
+}
