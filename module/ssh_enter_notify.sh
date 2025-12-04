@@ -1,6 +1,6 @@
 #!/bin/bash
 
-ENV_FILE="/etc/telegram-bot.env"
+ENV_FILE="/usr/local/etc/telegram/secrets.env"
 [ -r "$ENV_FILE" ] || exit 0
 source "$ENV_FILE"
 

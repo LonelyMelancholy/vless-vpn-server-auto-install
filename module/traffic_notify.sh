@@ -1,8 +1,8 @@
 #!/bin/bash
 # 0 1 * * * /usr/local/bin/trafic_notify.sh &> /dev/null
 
-ENV_FILE="/etc/telegram-bot.env"
-[ -r "$ENV_FILE" ] || exit 0
+ENV_FILE="/usr/local/etc/telegram/secrets.env"
+[ -r "$ENV_FILE" ] || exit 1
 source "$ENV_FILE"
 
 XRAY="/usr/local/bin/xray"
@@ -62,21 +62,22 @@ fmt(){ numfmt --to=iec --suffix=B "$1"; }
 # собираем сообщение
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
 HOSTNAME=$(hostname)
-MSG="📢 Daily traffic report
+MESSAGE="📢 Daily traffic report
 
 🖥️ Host: $HOSTNAME
+⌚ Time: $DATE
 🖥 Host total: $(fmt "$TOTAL")"
 # умножаем пользовательский total на 2 перед выводом
 while IFS=$'\t' read -r EMAIL T; do
   T2=$(( T * 2 ))
-  MSG="$MSG
+  MESSAGE="$MESSAGE
 🧑🏿‍💻 User total: $EMAIL - $(fmt "$T2")"
 done <<< "$USERS"
 
-MSG="$MSG
-⌚ Time: $DATE"
-
 # отправка в Telegram
-curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
     -d chat_id="$CHAT_ID" \
-    -d text="$MSG"
+    -d text="$MESSAGE" \
+    > /dev/null 2>&1
+
+exit 0

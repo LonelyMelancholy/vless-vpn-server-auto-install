@@ -1,62 +1,85 @@
 #!/bin/bash
-set -euo pipefail
 
-# Проверка на root пользователя
+# |---------------|
+# | Root checking |
+# |---------------|
 if [[ $(whoami) != "root" ]]; then
-  echo "❌ Not root user, exit"
+  echo "❌ You not root user, exit"
   exit 1
 else
-  echo "✅ Root user, continued"
+  echo "✅ You root user, continued"
 fi
 
+# |-------------------|
+# | Helping functions |
+# |-------------------|
+has_cmd() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# |--------------------------|
+# | Check configuration file |
+# |--------------------------|
 CFG_FILE="configuration.cfg"
 
+# Username check
 SECOND_USER=$(awk -F'"' '/^Server administrator username/ {print $2}' "$CFG_FILE")
 
 if [[ -z "$SECOND_USER" ]]; then
-    echo "Ошибка: не удалось найти 'Server administrator username' в $CFG_FILE"
+    echo "❌ Error: could not find 'Server administrator username' в $CFG_FILE"
     exit 1
 fi
 
 if [[ "$SECOND_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] && [[ ${#SECOND_USER} -le 32 ]]; then
-    echo "OK: имя '$SECOND_USER' корректно"
+    echo "✅ Name '$SECOND_USER' accepted"
 else
-    echo "Ошибка: имя '$SECOND_USER' не соответствует правилам Linux"
+    echo "❌ Error: name '$SECOND_USER' does not comply with Linux rules"
     exit 1
 fi
 
-
+#Password check
 PASS=$(awk -F'"' '/^Password for root and new user/ {print $2}' "$CFG_FILE")
 
-if [[ -z "$SECOND_USER" ]]; then
-    echo "Ошибка: не удалось найти 'Password for root and new user' в $CFG_FILE"
+if [[ -z "$PASS" ]]; then
+    echo "❌ Error: could not find 'Password for root and new user' в $CFG_FILE"
     exit 1
+else
+    echo "✅ Password accepted"
+    trap 'unset -v PASS' EXIT
 fi
 
-echo -e "\n✅Password accepted"
-trap 'unset -v PASS' EXIT
+# Check token
+READ_BOT_TOKEN=$(awk -F'"' '/^Telegram Bot Token/ {print $2}' "$CFG_FILE")
+if [[ -z "$READ_BOT_TOKEN" ]]; then
+    echo "❌ Error: could not find 'Telegram Bot Token' в $CFG_FILE"
+    exit 1
+else
+    echo "✅ Bot token accepted"
+fi
 
-# Обновление пакетов
-export DEBIAN_FRONTEND=noninteractive
-while true; do
-    echo "⚠️ Updating packages list, wait"
-    if apt-get update >/dev/null 2>&1; then
-        echo "✅ Update packages list completed"
-    else
-        echo "❌ Updating package list failed, try again"
-        sleep 5
-        continue
-    fi
-    echo "⚠️ Updating packages, wait"
-    if apt-get dist-upgrade -y >/dev/null 2>&1; then
-        echo "✅ Package update completed"
-    else
-        echo "❌ Updating package failed, try again"
-        sleep 5
-        continue
-    fi
-        break
-done
+# Check id
+READ_CHAT_ID=$(awk -F'"' '/^Telegram Chat id/ {print $2}' "$CFG_FILE")
+if [[ -z "$READ_CHAT_ID" ]]; then
+    echo "❌ Error: could not find 'Telegram Chat id' в $CFG_FILE"
+    exit 1
+else
+    echo "✅ Chat id accepted"
+fi
+
+# |----------------------------------|
+# | Pre install system configuration |
+# |----------------------------------|
+
+# Write token and id in secrets file
+mkdir -p /usr/local/etc/telegram
+
+ENV_FILE="/usr/local/etc/telegram/secrets.env"
+{
+  printf 'BOT_TOKEN=%q\n' "$READ_BOT_TOKEN"
+  printf 'CHAT_ID=%q\n'   "$READ_CHAT_ID"
+} > "$ENV_FILE"
+
+chmod 600 "$ENV_FILE"
 
 # Настройка sshd группы
 SSH_GROUP="ssh-users"
@@ -81,12 +104,20 @@ echo "root:$PASS" | chpasswd
 echo "$SECOND_USER:$PASS" | chpasswd
 echo "Root and $SECOND_USER passwords have been changed successfully"
 
-#  Обьявление переменных sshd
-SSH_CONF_FILE="/etc/ssh/sshd_config.d/99-custom_security.conf"
-LOW="30000"
-HIGH="40000"
 
-# Генерация порта в диапазоне [30000,40000]
+
+
+
+
+
+
+#  Обьявление переменных sshd
+SSH_CONF_SOURCE="/cfg/ssh.cfg"
+SSH_CONF_DEST="/etc/ssh/sshd_config.d/99-custom_security.conf"
+LOW="30000"
+HIGH="50000"
+
+# Генерация порта в диапазоне [30000,50000]
 choose_port() {
   if command -v shuf >/dev/null 2>&1; then
     shuf -i "${LOW}-${HIGH}" -n 1
@@ -107,15 +138,15 @@ else
 fi
 
 # Создаём файл конфигурации
-install -m 644 /module/ssh.cfg "$SSH_CONF_FILE"
+install -m 644 "$SSH_CONF_SOURCE" "$SSH_CONF_DEST"
 # меняем порт в конфиге
-sed -i "s/{PORT}/$PORT/g" "$SSH_CONF_FILE"
+sed -i "s/{PORT}/$PORT/g" "$SSH_CONF_DEST"
 
 # Проверка результата и вывод сообщения
-if compgen -G $SSH_CONF_FILE; then
+if compgen -G $SSH_CONF_DEST; then
     echo "✅ Creating a new sshd configuration completed"
 else
-  echo "Ошибка: не удалось записать ${SSH_CONF_FILE}"
+  echo "Ошибка: не удалось записать ${SSH_CONF_DEST}"
   exit 1
 fi
 
@@ -150,9 +181,18 @@ systemctl daemon-reload
 systemctl restart ssh.socket
 systemctl restart ssh.service
 
-# Disable message of the day
+
+# |--------------------------------------------------|
+# | Install ssh login/logout notify and disable MOTD |
+# |--------------------------------------------------|
+
+# Install script notify login 
+SSH_ENTER_NOTIFY_SCRIPT="/usr/local/bin/ssh_enter_notify.sh"
+install -m 700 module/ssh_enter_notify.sh "$SSH_ENTER_NOTIFY_SCRIPT"
+echo -e "\n# Notify for success ssh login and logout via telegram bot" >> /etc/pam.d/sshd
+echo "session optional pam_exec.so seteuid /usr/local/bin/ssh_enter_notify.sh" >> /etc/pam.d/sshd
+# Disable message of the day, backup and commented 2 lines
 MOTD="/etc/pam.d/sshd"
-# backup and commented 2 lines
 sed -i.bak \
   -e '/^[[:space:]]*session[[:space:]]\{1,\}optional[[:space:]]\{1,\}pam_motd\.so[[:space:]]\{1,\}motd=\/run\/motd\.dynamic[[:space:]]*$/{
         /^[[:space:]]*#/! s/^[[:space:]]*/&# /
@@ -161,87 +201,71 @@ sed -i.bak \
         /^[[:space:]]*#/! s/^[[:space:]]*/&# /
       }' \
   "$MOTD"
+echo "✅ Script ssh login/logout notify installed and MOTD disabled"
 
-# Install fail2ban
-while true; do
-    echo "⚠️ Install fail2ban, wait"
+# |---------------------------|
+# |Install and setup fail2ban |
+# |---------------------------|
+
+# Install (tryig 3 times)
+i=1
+while [ "$i" -lt 4 ]; do
+    echo "⚠️ Install fail2ban, attempt $i, please wait"
     if apt-get install fail2ban -y >/dev/null 2>&1; then
         echo "✅ Install fail2ban completed"
+        break
     else
         echo "❌ Install fail2ban failed, try again"
-        sleep 5
-        continue
+        i=$((i+1))
+        sleep 10
     fi
-        break
 done
 
-# Configuration fail2ban
-F2B_CONF_FILE="/etc/fail2ban/jail.local"
-
-# Создаём файл конфигурации
-install -m 644 /module/f2b.cfg "$F2B_CONF_FILE"
-# меняем порт в конфиге
-sed -i "s/{PORT}/$PORT/g" "$F2B_CONF_FILE"
-
-# Enable fail2ban
-systemctl enable --now fail2ban
-
-# Чтение token из файла и проверка присутствует ли он в файле
-
-READ_BOT_TOKEN=$(awk -F'"' '/^Telegram Bot Token/ {print $2}' "$CFG_FILE")
-if [[ -z "$READ_BOT_TOKEN" ]]; then
-    echo "Ошибка: не удалось найти 'Telegram Bot Token' в $CFG_FILE"
-    exit 1
+# Check installation and choice between setup or skip
+if has_cmd fail2ban-client; then
+    # Install ssh jail
+    F2B_CONF_SOURCE="cfg/jail.local"
+    F2B_CONF_DEST="/etc/fail2ban/jail.local"
+    install -m 644 "$F2B_CONF_SOURCE" "$F2B_CONF_DEST"
+    sed -i "s/{PORT}/$PORT/g" "$F2B_CONF_DEST"
+    # Install ssh action
+    TG_LOCAL_SOURCE="cfg/ssh_telegram.local"
+    TG_LOCAL_DEST="/etc/fail2ban/action.d/ssh_telegram.local"
+    install -m 644 "$TG_LOCAL_SOURCE" "$TG_LOCAL_DEST"
+    # Install ssh ban notify script
+    SSH_BAN_NOTIFY_SCRIPT_SOURCE="module/ssh_ban_notify.sh"
+    SSH_BAN_NOTIFY_SCRIPT_DEST="/usr/local/bin/ssh_ban_notify.sh"
+    install -m 755 "$SSH_BAN_NOTIFY_SCRIPT_SOURCE" "$SSH_BAN_NOTIFY_SCRIPT_DEST"
+    echo "✅ Setup fail2ban completed"
+    # Start fail2ban
+    if systemctl enable --now fail2ban; then
+        echo "✅ Fail2ban start successful"
+    else
+        echo "❌ Startup error, check logs"
+    fi
+else
+    echo "❌ Warning! Skipping fail2ban setup!"
 fi
 
-# Чтение id из файла и проверка присутствует ли он в файле
-READ_CHAT_ID=$(awk -F'"' '/^Telegram Chat id/ {print $2}' "$CFG_FILE")
-if [[ -z "$READ_CHAT_ID" ]]; then
-    echo "Ошибка: не удалось найти 'Telegram Chat id' в $CFG_FILE"
-    exit 1
-fi
+# |------------------------------------------|
+# |Server + User traffic telegram bot notify |
+# |------------------------------------------|
 
-# Запись token и id в файл секретов
-ENV_FILE="/etc/telegram-bot.env"
-{
-  printf 'BOT_TOKEN=%q\n' "$READ_BOT_TOKEN"
-  printf 'CHAT_ID=%q\n'   "$READ_CHAT_ID"
-} > "$ENV_FILE"
-chmod 600 "$ENV_FILE"
-
-# Уведомления об успешном логине разлогине по ssh
-SSH_ENTER_NOTIFY_SCRIPT="/usr/local/bin/ssh_enter_notify.sh"
-install -m 700 module/ssh_enter_notify.sh "$SSH_ENTER_NOTIFY_SCRIPT"
-echo -e "\n# Notify for success ssh login and logout via telegram bot" >> /etc/pam.d/sshd
-echo "session optional pam_exec.so seteuid /usr/local/bin/ssh_enter_notify.sh" >> /etc/pam.d/sshd
-
-
-#ssh ban brutforce notify
-
-install -m 700 module/ssh_ban_notify.sh "/usr/local/bin/ssh_ban_notify.sh"
-
-cat > "/etc/fail2ban/action.d/ssh_telegram.local" <<'EOF'
-[Definition]
-actionstart =
-actionstop =
-actioncheck =
-actionban = /usr/local/bin/ssh_ban_notify.sh ban <ip> <bantime>
-actionunban = /usr/local/bin/ssh_ban_notify.sh unban <ip> <bantime>
+# Install script
+TRAFFIC_NOTIFY_SCRIPT_SOURCE="module/traffic_notify.sh"
+TRAFFIC_NOTIFY_SCRIPT_DEST="/usr/local/bin/traffic_notify.sh"
+install -m 755 "$TRAFFIC_NOTIFY_SCRIPT_SOURCE" "$TRAFFIC_NOTIFY_SCRIPT_DEST"
+# Turn on script in cron
+cat > "/etc/cron.d/traffic_notify" <<EOF
+0 1 * * * root "$TRAFFIC_NOTIFY_SCRIPT_DEST" >/dev/null 2>&1
 EOF
+chmod 644 "/etc/cron.d/traffic_notify"
+echo "✅ Traffic notify script installed successful"
 
-systemctl restart fail2ban
 
-# Уведомляшка по трафику
-install -m 700 module/trafic_notify.sh "/usr/local/bin/trafic_notify.sh"
-
-# Включаем скрипт в крон для авто выполнения в 1:00 ночи
-cat > "/etc/cron.d/trafic_notify" <<'EOF'
-0 1 * * * root /usr/local/bin/trafic_notify.sh >/dev/null 2>&1
-EOF
 
 
 # Включаем security обновления и перезагрузку по необходимости
-
 apt-get install unattended-upgrades -y
 # так и не доделал
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-ENV_FILE="/etc/telegram-bot.env"
-[ -r "$ENV_FILE" ] || exit 0
+ENV_FILE="/usr/local/etc/telegram/secrets.env"
+[ -r "$ENV_FILE" ] || exit 1
 source "$ENV_FILE"
 
 ACTION="$1"
@@ -11,7 +11,7 @@ HOSTNAME=$(hostname)
 DATE=$(date '+%Y-%m-%d %H:%M:%S')
 
 if [ "$ACTION" = "ban" ]; then
-MESSAGE="⚠️ SSH login error (ban)
+MESSAGE="⚠️ SSH jail notify (ban)
 
 🖥️ Host: $HOSTNAME
 ⌚ Time: $DATE
@@ -19,7 +19,7 @@ MESSAGE="⚠️ SSH login error (ban)
 🏴‍☠️ From: $IP
 💾 Logfile: /var/log/fail2ban.log"
 else
-MESSAGE="⚠️ SSH login error (unban)
+MESSAGE="⚠️ SSH jail notify (unban)
 
 🖥️ Host: $HOSTNAME
 ⌚ Time: $DATE
@@ -30,4 +30,7 @@ fi
 
 curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
     -d chat_id="$CHAT_ID" \
-    -d text="$MESSAGE"
+    -d text="$MESSAGE" \
+    > /dev/null 2>&1
+
+exit 0

@@ -1,0 +1,6 @@
+[Definition]
+actionstart =
+actionstop =
+actioncheck =
+actionban = /usr/local/bin/ssh_ban_notify.sh ban <ip> <bantime>
+actionunban = /usr/local/bin/ssh_ban_notify.sh unban <ip> <bantime>
