@@ -16,7 +16,7 @@ fi
 has_cmd() {
     command -v "$1" >/dev/null 2>&1
 }
-
+shuf, 
 # |--------------------------|
 # | Check configuration file |
 # |--------------------------|
@@ -26,7 +26,7 @@ CFG_FILE="configuration.cfg"
 SECOND_USER=$(awk -F'"' '/^Server administrator username/ {print $2}' "$CFG_FILE")
 
 if [[ -z "$SECOND_USER" ]]; then
-    echo "❌ Error: could not find 'Server administrator username' в $CFG_FILE"
+    echo "❌ Error: could not find 'Server administrator username' in $CFG_FILE"
     exit 1
 fi
 
@@ -41,7 +41,7 @@ fi
 PASS=$(awk -F'"' '/^Password for root and new user/ {print $2}' "$CFG_FILE")
 
 if [[ -z "$PASS" ]]; then
-    echo "❌ Error: could not find 'Password for root and new user' в $CFG_FILE"
+    echo "❌ Error: could not find 'Password for root and new user' in $CFG_FILE"
     exit 1
 else
     echo "✅ Password accepted"
@@ -51,7 +51,7 @@ fi
 # Check token
 READ_BOT_TOKEN=$(awk -F'"' '/^Telegram Bot Token/ {print $2}' "$CFG_FILE")
 if [[ -z "$READ_BOT_TOKEN" ]]; then
-    echo "❌ Error: could not find 'Telegram Bot Token' в $CFG_FILE"
+    echo "❌ Error: could not find 'Telegram Bot Token' in $CFG_FILE"
     exit 1
 else
     echo "✅ Bot token accepted"
@@ -60,7 +60,7 @@ fi
 # Check id
 READ_CHAT_ID=$(awk -F'"' '/^Telegram Chat id/ {print $2}' "$CFG_FILE")
 if [[ -z "$READ_CHAT_ID" ]]; then
-    echo "❌ Error: could not find 'Telegram Chat id' в $CFG_FILE"
+    echo "❌ Error: could not find 'Telegram Chat id' in $CFG_FILE"
     exit 1
 else
     echo "✅ Chat id accepted"
@@ -71,104 +71,115 @@ fi
 # |----------------------------------|
 
 # Write token and id in secrets file
-mkdir -p /usr/local/etc/telegram
-
+ENV_PATH="/usr/local/etc/telegram/"
 ENV_FILE="/usr/local/etc/telegram/secrets.env"
-{
-  printf 'BOT_TOKEN=%q\n' "$READ_BOT_TOKEN"
-  printf 'CHAT_ID=%q\n'   "$READ_CHAT_ID"
-} > "$ENV_FILE"
-
+if ! mkdir -p $ENV_PATH; then
+    echo "❌ Failed to create directory $ENV_PATH"
+fi
+cat > "$ENV_FILE" <<EOF
+BOT_TOKEN="$READ_BOT_TOKEN"
+CHAT_ID="$READ_CHAT_ID"  
+EOF
 chmod 600 "$ENV_FILE"
+
+echo "✅ Token and Chat id writed in secret file"
 
 # Настройка sshd группы
 SSH_GROUP="ssh-users"
 if ! getent group "$SSH_GROUP" >/dev/null 2>&1; then
-    echo "⚠️ Adding group $SSH_GROUP"
     if addgroup "$SSH_GROUP" >/dev/null 2>&1; then
         echo "✅ Group $SSH_GROUP has been successfully added"
     else
         echo "❌ Ошибка: не удалось создать группу $SSH_GROUP"
     exit 1
+    fi
 else 
     echo "✅ Group $SSH_GROUP already exists"
 fi
 
 # Создание пользователя и добавление его в sshd группу
-echo "⚠️ Сreate second user and add them to the $SSH_GROUP and sudo group"
-useradd -m -s /bin/bash -G sudo,"$SSH_GROUP" "$SECOND_USER"
+if useradd -m -s /bin/bash -G sudo,"$SSH_GROUP" "$SECOND_USER"; then
 echo "✅ User has been created and added to $SSH_GROUP and sudo groups"
+else
+echo "❌ Error: user not created"
+exit 1
+fi
 
 # Смена пароля root и нового пользователя
-echo "root:$PASS" | chpasswd
-echo "$SECOND_USER:$PASS" | chpasswd
-echo "Root and $SECOND_USER passwords have been changed successfully"
+if printf 'root:%s\n%s:%s\n' "$PASS" "$SECOND_USER" "$PASS" | chpasswd; then
+echo "✅ Root and $SECOND_USER passwords have been changed successfully"
+else
+echo "❌ Error: root and $SECOND_USER passwords not changed"
+fi
 
 
 
 
 
 
+# |-------------------|
+# | SSH Configuration |
+# |-------------------|
 
-
-#  Обьявление переменных sshd
+# Variables
 SSH_CONF_SOURCE="/cfg/ssh.cfg"
 SSH_CONF_DEST="/etc/ssh/sshd_config.d/99-custom_security.conf"
-LOW="30000"
+LOW="40000"
 HIGH="50000"
 
-# Генерация порта в диапазоне [30000,50000]
-choose_port() {
-  if command -v shuf >/dev/null 2>&1; then
-    shuf -i "${LOW}-${HIGH}" -n 1
-  else
-    local span=$((HIGH - LOW + 1))
-    local rnd=$(( ((RANDOM<<15) | RANDOM) % span ))
-    echo $((LOW + rnd))
-  fi
-}
-PORT="$(choose_port)"
+# Port generation [40000,50000]
+PORT="$(shuf -i "${LOW}-${HIGH}" -n 1)"
 
 # Очистка файлов конфигураций с высоким приоритетом во избежание конфликтов
 if compgen -G "/etc/ssh/sshd_config.d/99*.conf" > /dev/null; then
-    rm /etc/ssh/sshd_config.d/99*.conf
+    rm -f /etc/ssh/sshd_config.d/99*.conf
     echo "✅ Deletion of previous conflicting sshd configuration files completed"
 else
     echo "✅ No conflicting sshd configurations files found"
 fi
 
-# Создаём файл конфигурации
-install -m 644 "$SSH_CONF_SOURCE" "$SSH_CONF_DEST"
 # меняем порт в конфиге
 sed -i "s/{PORT}/$PORT/g" "$SSH_CONF_DEST"
-
-# Проверка результата и вывод сообщения
-if compgen -G $SSH_CONF_DEST; then
+# Создаём файл конфигурации
+if install -m 644 "$SSH_CONF_SOURCE" "$SSH_CONF_DEST"; then
     echo "✅ Creating a new sshd configuration completed"
 else
-  echo "Ошибка: не удалось записать ${SSH_CONF_DEST}"
-  exit 1
+    echo "❌ Error: sshd configuration not installed"
+    exit 1
 fi
 
-rm /etc/ssh/ssh_host_ecdsa_key
-rm /etc/ssh/ssh_host_ecdsa_key.pub
-rm /etc/ssh/ssh_host_rsa_key
+# Delete disabled key
+if rm /etc/ssh/ssh_host_ecdsa_key && \
+rm /etc/ssh/ssh_host_ecdsa_key.pub && \
+rm /etc/ssh/ssh_host_rsa_key && \
 rm /etc/ssh/ssh_host_rsa_key.pub
-
+then
+    echo "✅ Old keys have been removed"
+else
+    echo "❌ Error: old keys are not deleted"
+    exit 1
+fi
 
 # Находим домашний каталог пользователя
-USER_HOME="$(getent passwd "$SECOND_USER" | cut -d: -f6 || true)"
-
+USER_HOME="$(getent passwd "$SECOND_USER" | cut -d: -f6)"
 SSH_DIR="$USER_HOME/.ssh"
 KEY_NAME="authorized_keys"
-PRIV_KEY_PATH="$SSH_DIR/$KEY_NAME"
-PUB_KEY_PATH="$PRIV_KEY_PATH.pub"
+PRIV_KEY_PATH="${SSH_DIR}/${KEY_NAME}"
+PUB_KEY_PATH="${PRIV_KEY_PATH}.pub"
 
 # Создаём .ssh folder
-mkdir "$SSH_DIR"
+if ! mkdir "$SSH_DIR"; then
+    echo "❌ Error: unable to create folder for ssh keys"
+    exit 1
+fi
 
-# Генерируем ключ (без пароля)
-ssh-keygen -t ed25519 -N "" -f "$PRIV_KEY_PATH" -q
+# Key generation for ssh
+if ssh-keygen -t ed25519 -N "" -f "$PRIV_KEY_PATH" -q; then
+    echo "✅ The ssh key was successfully generated"
+else
+    echo "❌ Error: the ssh key cannot be generated"
+    exit 1
+fi
 
 # Права и владелец
 chmod 700 "$SSH_DIR"

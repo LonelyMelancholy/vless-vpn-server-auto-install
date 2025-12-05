@@ -1,7 +1,12 @@
 #!/bin/bash
-set -euo pipefail
 
-
+# Check Ubuntu Pro Token
+UBUNTU_PRO_TOKEN=$(awk -F'"' '/^Ubuntu Pro Token/ {print $2}' "$CFG_FILE")
+if [[ -z "$UBUNTU_PRO_TOKEN" ]]; then
+    echo "⚠️ Error: could not find 'Ubuntu Pro Token' in $CFG_FILE, skip"
+else
+    echo "✅ Ubuntu Pro Token accepted"
+fi
 
 export DEBIAN_FRONTEND=noninteractive
 while true; do
@@ -23,3 +28,5 @@ while true; do
     fi
         break
 done
+
+exit 0
