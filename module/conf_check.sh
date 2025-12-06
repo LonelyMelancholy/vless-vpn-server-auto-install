@@ -14,6 +14,7 @@ if [[ -z "$SECOND_USER" ]]; then
 fi
 
 if [[ "$SECOND_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] && [[ ${#SECOND_USER} -le 32 ]]; then
+    sleep 1
     echo "✅ Username accepted"
 else
     echo "❌ Error: name '$SECOND_USER' does not comply with Linux rules"
@@ -27,6 +28,7 @@ if [[ -z "$PASS" ]]; then
     echo "❌ Error: 'Password for root and new user' is empty in $CFG_FILE"
     exit 1
 else
+    sleep 1
     echo "✅ Password accepted"
     trap 'unset -v PASS' EXIT
 fi
@@ -37,6 +39,7 @@ if [[ -z "$READ_BOT_TOKEN" ]]; then
     echo "❌ Error: 'Telegram Bot Token' is empty in $CFG_FILE"
     exit 1
 else
+    sleep 1
     echo "✅ Bot token accepted"
 fi
 
@@ -46,6 +49,7 @@ if [[ -z "$READ_CHAT_ID" ]]; then
     echo "❌ Error: 'Telegram Chat id' is empty in $CFG_FILE"
     exit 1
 else
+    sleep 1
     echo "✅ Chat id accepted"
 fi
 
@@ -54,5 +58,6 @@ UBUNTU_PRO_TOKEN=$(awk -F'"' '/^Ubuntu Pro Token/ {print $2}' "$CFG_FILE")
 if [[ -z "$UBUNTU_PRO_TOKEN" ]]; then
     echo "⚠️ Warning: 'Ubuntu Pro Token' is empty in $CFG_FILE, skip ubuntu pro section"
 else
+    sleep 1
     echo "✅ Ubuntu Pro Token accepted"
 fi

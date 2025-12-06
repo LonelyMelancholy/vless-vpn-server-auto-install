@@ -7,6 +7,7 @@ if [[ $EUID -ne 0 ]]; then
     echo "❌ You not root user, exit"
     exit 1
 else
+    sleep 1
     echo "✅ You root user, continued"
 fi
 
@@ -60,6 +61,7 @@ while true; do
     echo "🔄 Updating packages $i attempt, please wait"
     if apt-get dist-upgrade -y > "$LOG_UPDATE_DIST" 2>&1; then
         echo "✅ Package update completed"
+        sleep 1
         echo "✅ System will reboot"
         break
     fi
@@ -74,6 +76,7 @@ while true; do
     fi
 done
 
+sleep 1
 if ! reboot; then
     echo "❌ Reboot command failed"
     exit 1
