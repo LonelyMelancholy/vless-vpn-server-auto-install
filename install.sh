@@ -15,6 +15,13 @@ fi
 shuf, Зделать проверку утилит для работы нужны которые
 trebovania
 unzip, sha256sum, curl
+curl (dl, tg_post),
+unzip (распаковка xray, строка 261),
+sha256sum,
+systemctl,
+mktemp.
+
+
 
 # |-------------------|
 # | Helping functions |
