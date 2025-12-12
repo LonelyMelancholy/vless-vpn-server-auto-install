@@ -1,25 +1,17 @@
 #!/bin/bash
 
-# |---------------|
-# | Root checking |
-# |---------------|
+# root checking
 if [[ $EUID -ne 0 ]]; then
-  echo "❌ You not root user, exit"
+  echo "❌ Error: You not root user, exit"
   exit 1
 else
-  echo "✅ You root user, continued"
+  echo "✅ Success: You root user, continued"
 fi
-# |----------------|
-# | Utilites check |
-# |----------------|
-shuf, Зделать проверку утилит для работы нужны которые
-trebovania
-unzip, sha256sum, curl
-curl (dl, tg_post),
-unzip (распаковка xray, строка 261),
-sha256sum,
-systemctl,
-mktemp.
+
+# check another instanse of the script is not running
+readonly LOCK_FILE="/var/run/vpn_install.lock"
+exec 9>"$LOCK_FILE"
+flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 
 
 
@@ -33,12 +25,12 @@ has_cmd() {
 # |--------------------------|
 # | Check configuration file |
 # |--------------------------|
-CFG_CHECK="module/conf_check.sh"
+CFG_CHECK="module/cfg_check.sh"
 if [ ! -r "$CFG_CHECK" ]; then
     echo "❌ Error: check $CFG_CHECK it's missing or you not have right to read"
     exit 1
 fi
-source module/conf_check.sh
+source "$CFG_CHECK"
 
 # |----------------------------------|
 # | Pre install system configuration |
@@ -315,14 +307,17 @@ sudo systemctl enable --now xray.service
 
 
 
-# |------------------------------|
-# | Auto update xray and geobase |
-# |------------------------------|
 
-
-
-
-
+# Auto update xray and geobase
+GEODAT_SCRIPT_SOURCE="module/geodat_update.sh"
+GEODAT_SCRIPT_DEST="/usr/local/bin/geodat_update.sh"
+install -m 755 "$GEODAT_SCRIPT_SOURCE" "$GEODAT_SCRIPT_DEST"
+# Turn on script in cron
+cat > "/etc/cron.d/geodat_update" <<EOF
+0 2 * * * root "$GEODAT_SCRIPT_DEST" >/dev/null 2>&1
+EOF
+chmod 644 "/etc/cron.d/geodat_update"
+echo "✅ Xray and geo*.dat update script installed successful"
 
 
 
