@@ -29,9 +29,9 @@ exit_fail() {
 # root checking
 [[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
 
-# check another instanse of the script is not running
+# check another instanсe of the script is not running
 readonly LOCK_FILE="/var/run/geodat_update.lock"
-exec 9>"$LOCK_FILE"
+exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
 flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 
 # main variables
