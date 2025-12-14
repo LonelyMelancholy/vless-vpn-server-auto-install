@@ -2,9 +2,9 @@
 # done
 # fail2ban Telegram ssh notify
 # arguments: <action> <ip> <bantime_sec>
-# exit 0 to avoid bothering fail2ban with an incorrect error code, all errors are still logged exept 3 first
+# exit 0 to avoid bothering fail2ban with an incorrect error code, all errors are still logged, except the first three
 
-# root checking
+# root check
 [[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 0; }
 
 # export path just in case
@@ -22,22 +22,22 @@ exec &>> "$NOTIFY_LOG" || { echo "❌ Error: cannot write to log '$NOTIFY_LOG', 
 readonly DATE_START="$(date "+%Y-%m-%d %H:%M:%S")"
 echo "   ########## fail2ban notify started - $DATE_START ##########   "
 
-# exit log message function
+# exit logging message function
 RC=1
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
-        DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
+        local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
         echo "   ########## fail2ban notify ended - $DATE_END ##########   "
     else
-        DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
+        local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
         echo "   ########## fail2ban notify failed - $DATE_FAIL ##########   "
     fi
 }
 
-# error exit log message for end log
+# trap for the end log message for the end log
 trap 'on_exit' EXIT
 
-# main variable
+# main variables
 readonly ACTION="${1:-unknown}"
 readonly IP="${2:-unknown}"
 readonly BANTIME_SEC="${3:-0}"
@@ -68,7 +68,7 @@ duration_human() {
 }
 readonly BAN_TIME="$(duration_human "$BANTIME_SEC")"
 
-# pure telegram message function with checking the sending status
+# pure Telegram message function with checking the sending status
 _tg_m() {
     local response
     response="$(curl -fsS -m 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
@@ -78,20 +78,20 @@ _tg_m() {
     return 0
 }
 
-# telegram message with logging and retry
+# Telegram message with logging and retry
 telegram_message() {
     local attempt=1
     while true; do
         if ! _tg_m; then
             if [[ "$attempt" -ge "$MAX_ATTEMPTS" ]]; then
-                echo "❌ Error: failed to send telegram message after $attempt attempts, exit"
+                echo "❌ Error: failed to send Telegram message after $attempt attempts, exit"
                 return 1
             fi
             sleep 60
             ((attempt++))
             continue
         else
-            echo "✅ Success: message was sent to telegram after $attempt attempts"
+            echo "✅ Success: message was sent to Telegram after $attempt attempts"
             RC=0
             break
         fi
