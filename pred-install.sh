@@ -1,9 +1,10 @@
 #!/bin/bash
-# done
+# done work
+# done test
 
 echo "📢 Info: starting the procedure for preparing the system for installation"
 
-# root checking
+# root check
 if [[ "$EUID" -ne 0 ]]; then
     sleep 1
     echo "❌ Error: you are not root user, exit"
@@ -110,7 +111,7 @@ cmd_dist=(env DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::=--for
 install_and_update "update packages list" "$LOG_UPDATE_LIST" "${cmd_update[@]}"
 if [[ "${#missing_pkgs[@]}" -gt 0 ]]; then
     sleep 1
-    echo "📢 Info: required utilities '${missing_pkgs[*]}' not found, prepare for installation"
+    echo "📢 Info: required utilities: '${missing_pkgs[*]}' not found, prepare for installation"
     install_and_update "install required utilities: '${missing_pkgs[*]}'" "$LOG_INSTALL_UTILITIES" \
         "${cmd_install[@]}" "${missing_pkgs[@]}"
 fi

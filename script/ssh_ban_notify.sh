@@ -1,5 +1,6 @@
 #!/bin/bash
-# done
+# done work
+# done test
 # fail2ban Telegram ssh notify
 # arguments: <action> <ip> <bantime_sec>
 # exit 0 to avoid bothering fail2ban with an incorrect error code, all errors are still logged, except the first three
@@ -20,17 +21,17 @@ exec &>> "$NOTIFY_LOG" || { echo "❌ Error: cannot write to log '$NOTIFY_LOG', 
 
 # start logging message
 readonly DATE_START="$(date "+%Y-%m-%d %H:%M:%S")"
-echo "   ########## fail2ban notify started - $DATE_START ##########   "
+echo "########## fail2ban notify started - $DATE_START ##########"
 
 # exit logging message function
 RC=1
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
         local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "   ########## fail2ban notify ended - $DATE_END ##########   "
+        echo "########## fail2ban notify ended - $DATE_END ##########"
     else
         local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "   ########## fail2ban notify failed - $DATE_FAIL ##########   "
+        echo "########## fail2ban notify failed - $DATE_FAIL ##########"
     fi
 }
 
@@ -73,6 +74,7 @@ _tg_m() {
     local response
     response="$(curl -fsS -m 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
         --data-urlencode "chat_id=${CHAT_ID}" \
+        --data-urlencode "parse_mode=HTML" \
         --data-urlencode "text=${MESSAGE}")" || return 1
     grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' <<< "$response" || return 1
     return 0
@@ -84,14 +86,14 @@ telegram_message() {
     while true; do
         if ! _tg_m; then
             if [[ "$attempt" -ge "$MAX_ATTEMPTS" ]]; then
-                echo "❌ Error: failed to send Telegram message after $attempt attempts, exit"
+                echo "❌ Error: failed to send Telegram message after $attempt attempt, exit"
                 return 1
             fi
             sleep 60
             ((attempt++))
             continue
         else
-            echo "✅ Success: message was sent to Telegram after $attempt attempts"
+            echo "✅ Success: message was sent to Telegram after $attempt attempt"
             RC=0
             break
         fi
@@ -117,33 +119,33 @@ readonly DATE_MESSAGE="$(date '+%Y-%m-%d %H:%M:%S')"
 
 case "$ACTION" in
     ban)
-MESSAGE="⚠️  SSH jail notify (ban)
+MESSAGE="⚠️ <b>SSH jail notify (ban)</b>
 
-🖥️  Host: $HOSTNAME
-⌚ Time: $DATE_MESSAGE
-💀 Banned for: $BAN_TIME in jail
-🏴‍☠️ From: $IP
-💾 Fail2ban log: '/var/log/fail2ban.log'
-💾 Notify log: '$NOTIFY_LOG'"
+🖥️ <b>Host:</b> $HOSTNAME
+⌚ <b>Time:</b> $DATE_MESSAGE
+💀 <b>Banned for:</b> $BAN_TIME in jail
+🏴‍☠️ <b>From:</b> $IP
+💾 <b>Fail2ban log:</b> '/var/log/fail2ban.log'
+💾 <b>Notify log:</b> '$NOTIFY_LOG'"
     ;;
     unban)
-MESSAGE="⚠️  SSH jail notify (unban)
+MESSAGE="⚠️ <b>SSH jail notify (unban)</b>
 
-🖥️  Host: $HOSTNAME
-⌚ Time: $DATE_MESSAGE
-💀 Unbanned after: $BAN_TIME in jail
-🏴‍☠️ From: $IP
-💾 Fail2ban log: '/var/log/fail2ban.log'
-💾 Notify log: '$NOTIFY_LOG'"
+🖥️ <b>Host:</b> $HOSTNAME
+⌚ <b>Time:</b> $DATE_MESSAGE
+💀 <b>Unbanned after:</b> $BAN_TIME in jail
+🏴‍☠️ <b>From:</b> $IP
+💾 <b>Fail2ban log:</b> '/var/log/fail2ban.log'
+💾 <b>Notify log:</b> '$NOTIFY_LOG'"
     ;;
     *)
-MESSAGE="⚠️  SSH jail notify (unknown)
+MESSAGE="⚠️ <b>SSH jail notify (unknown)</b>
 
-🖥️  Host: $HOSTNAME
-⌚ Time: $DATE_MESSAGE
-❌ Error: unknown fail2ban action, check settings
-💾 Fail2ban log: '/var/log/fail2ban.log'
-💾 Notify log: '$NOTIFY_LOG'"
+🖥️ <b>Host:</b> $HOSTNAME
+⌚ <b>Time:</b> $DATE_MESSAGE
+❌ <b>Error:</b> unknown fail2ban action, check settings
+💾 <b>Fail2ban log:</b> '/var/log/fail2ban.log'
+💾 <b>Notify log:</b> '$NOTIFY_LOG'"
     ;;
 esac
 

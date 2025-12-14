@@ -225,8 +225,8 @@ if has_cmd fail2ban-client; then
     TG_LOCAL_DEST="/etc/fail2ban/action.d/ssh_telegram.local"
     install -m 644 "$TG_LOCAL_SOURCE" "$TG_LOCAL_DEST"
     # Install ssh ban notify script
-    SSH_BAN_NOTIFY_SCRIPT_SOURCE="module/ssh_ban_notify.sh"
-    SSH_BAN_NOTIFY_SCRIPT_DEST="/usr/local/bin/ssh_ban_notify.sh"
+    SSH_BAN_NOTIFY_SCRIPT_SOURCE="script/ssh_ban_notify.sh"
+    SSH_BAN_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_ban_notify.sh"
     install -m 755 "$SSH_BAN_NOTIFY_SCRIPT_SOURCE" "$SSH_BAN_NOTIFY_SCRIPT_DEST"
     echo "✅ Setup fail2ban completed"
     # Start fail2ban
