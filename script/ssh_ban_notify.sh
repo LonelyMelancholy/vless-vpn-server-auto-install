@@ -24,7 +24,7 @@ readonly DATE_START="$(date "+%Y-%m-%d %H:%M:%S")"
 echo "########## fail2ban notify started - $DATE_START ##########"
 
 # exit logging message function
-RC=1
+RC="1"
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
         local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
@@ -40,9 +40,9 @@ trap 'on_exit' EXIT
 
 # main variables
 readonly ACTION="${1:-unknown}"
-readonly IP="${2:-unknown}"
+readonly IP_MSG="${2:-unknown}"
 readonly BANTIME_SEC="${3:-0}"
-readonly HOSTNAME="$(hostname)"
+readonly HOSTNAME_MSG="$(hostname)"
 readonly MAX_ATTEMPTS=3
 
 # function to calculate the ban time
@@ -82,7 +82,7 @@ _tg_m() {
 
 # Telegram message with logging and retry
 telegram_message() {
-    local attempt=1
+    local attempt="1"
     while true; do
         if ! _tg_m; then
             if [[ "$attempt" -ge "$MAX_ATTEMPTS" ]]; then
@@ -94,10 +94,11 @@ telegram_message() {
             continue
         else
             echo "✅ Success: message was sent to Telegram after $attempt attempt"
-            RC=0
+            RC="0"
             break
         fi
     done
+    return 0
 }
 
 # check secret file, if the file is ok, we source it.
@@ -121,27 +122,27 @@ case "$ACTION" in
     ban)
 MESSAGE="⚠️ <b>SSH jail notify (ban)</b>
 
-🖥️ <b>Host:</b> $HOSTNAME
+🖥️ <b>Host:</b> $HOSTNAME_MSG
 ⌚ <b>Time:</b> $DATE_MESSAGE
 💀 <b>Banned for:</b> $BAN_TIME in jail
-🏴‍☠️ <b>From:</b> $IP
+🏴‍☠️ <b>From:</b> $IP_MSG
 💾 <b>Fail2ban log:</b> '/var/log/fail2ban.log'
 💾 <b>Notify log:</b> '$NOTIFY_LOG'"
     ;;
     unban)
 MESSAGE="⚠️ <b>SSH jail notify (unban)</b>
 
-🖥️ <b>Host:</b> $HOSTNAME
+🖥️ <b>Host:</b> $HOSTNAME_MSG
 ⌚ <b>Time:</b> $DATE_MESSAGE
 💀 <b>Unbanned after:</b> $BAN_TIME in jail
-🏴‍☠️ <b>From:</b> $IP
+🏴‍☠️ <b>From:</b> $IP_MSG
 💾 <b>Fail2ban log:</b> '/var/log/fail2ban.log'
 💾 <b>Notify log:</b> '$NOTIFY_LOG'"
     ;;
     *)
 MESSAGE="⚠️ <b>SSH jail notify (unknown)</b>
 
-🖥️ <b>Host:</b> $HOSTNAME
+🖥️ <b>Host:</b> $HOSTNAME_MSG
 ⌚ <b>Time:</b> $DATE_MESSAGE
 ❌ <b>Error:</b> unknown fail2ban action, check settings
 💾 <b>Fail2ban log:</b> '/var/log/fail2ban.log'
@@ -150,7 +151,7 @@ MESSAGE="⚠️ <b>SSH jail notify (unknown)</b>
 esac
 
 # logging message
-echo "   ########## collected message - $DATE_MESSAGE ##########   "
+echo "########## collected message - $DATE_MESSAGE ##########"
 echo "$MESSAGE"
 
 # send message

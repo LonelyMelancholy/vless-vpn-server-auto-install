@@ -176,10 +176,10 @@ systemctl restart ssh.service
 #install log 
 mkdir /var/log/telegram
 # Install script notify login 
-SSH_ENTER_NOTIFY_SCRIPT="/usr/local/bin/ssh_enter_notify.sh"
+SSH_ENTER_NOTIFY_SCRIPT="/usr/local/bin/telegram/ssh_enter_notify.sh"
 install -m 700 module/ssh_enter_notify.sh "$SSH_ENTER_NOTIFY_SCRIPT"
 echo -e "\n# Notify for success ssh login and logout via telegram bot" >> /etc/pam.d/sshd
-echo "session optional pam_exec.so seteuid /usr/local/bin/ssh_enter_notify.sh" >> /etc/pam.d/sshd
+echo "session optional pam_exec.so seteuid $SSH_ENTER_NOTIFY_SCRIPT" >> /etc/pam.d/sshd
 # Disable message of the day, backup and commented 2 lines
 MOTD="/etc/pam.d/sshd"
 sed -i.bak \
@@ -227,7 +227,7 @@ if has_cmd fail2ban-client; then
     # Install ssh ban notify script
     SSH_BAN_NOTIFY_SCRIPT_SOURCE="script/ssh_ban_notify.sh"
     SSH_BAN_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_ban_notify.sh"
-    install -m 755 "$SSH_BAN_NOTIFY_SCRIPT_SOURCE" "$SSH_BAN_NOTIFY_SCRIPT_DEST"
+    install -m 700 "$SSH_BAN_NOTIFY_SCRIPT_SOURCE" "$SSH_BAN_NOTIFY_SCRIPT_DEST"
     echo "✅ Setup fail2ban completed"
     # Start fail2ban
     if systemctl enable --now fail2ban; then
