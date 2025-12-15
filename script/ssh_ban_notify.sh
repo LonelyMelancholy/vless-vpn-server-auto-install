@@ -5,6 +5,14 @@
 # arguments: <action> <ip> <bantime_sec>
 # exit 0 to avoid bothering fail2ban with an incorrect error code, all errors are still logged, except the first three
 
+# sends the script to the background without delaying fail2ban
+# for debugging, add a redirect to the debug log
+if [[ -z "${TG_BG:-}" ]]; then
+    export TG_BG=1
+    "$0" "$@" &> /dev/null &
+    exit 0
+fi
+
 # root check
 [[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 0; }
 
@@ -40,9 +48,9 @@ trap 'on_exit' EXIT
 
 # main variables
 readonly ACTION="${1:-unknown}"
-readonly IP_MSG="${2:-unknown}"
+readonly IP="${2:-unknown}"
 readonly BANTIME_SEC="${3:-0}"
-readonly HOSTNAME_MSG="$(hostname)"
+readonly HOSTNAME="$(hostname)"
 readonly MAX_ATTEMPTS=3
 
 # function to calculate the ban time
@@ -122,31 +130,31 @@ case "$ACTION" in
     ban)
 MESSAGE="⚠️ <b>SSH jail notify (ban)</b>
 
-🖥️ <b>Host:</b> $HOSTNAME_MSG
+🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
 💀 <b>Banned for:</b> $BAN_TIME in jail
-🏴‍☠️ <b>From:</b> $IP_MSG
-💾 <b>Fail2ban log:</b> '/var/log/fail2ban.log'
-💾 <b>Notify log:</b> '$NOTIFY_LOG'"
+🏴‍☠️ <b>From:</b> $IP
+💾 <b>Fail2ban log:</b> /var/log/fail2ban.log
+💾 <b>Notify log:</b> $NOTIFY_LOG"
     ;;
     unban)
 MESSAGE="⚠️ <b>SSH jail notify (unban)</b>
 
-🖥️ <b>Host:</b> $HOSTNAME_MSG
+🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
 💀 <b>Unbanned after:</b> $BAN_TIME in jail
-🏴‍☠️ <b>From:</b> $IP_MSG
-💾 <b>Fail2ban log:</b> '/var/log/fail2ban.log'
-💾 <b>Notify log:</b> '$NOTIFY_LOG'"
+🏴‍☠️ <b>From:</b> $IP
+💾 <b>Fail2ban log:</b> /var/log/fail2ban.log
+💾 <b>Notify log:</b> $NOTIFY_LOG"
     ;;
     *)
 MESSAGE="⚠️ <b>SSH jail notify (unknown)</b>
 
-🖥️ <b>Host:</b> $HOSTNAME_MSG
+🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
 ❌ <b>Error:</b> unknown fail2ban action, check settings
-💾 <b>Fail2ban log:</b> '/var/log/fail2ban.log'
-💾 <b>Notify log:</b> '$NOTIFY_LOG'"
+💾 <b>Fail2ban log:</b> /var/log/fail2ban.log
+💾 <b>Notify log:</b> $NOTIFY_LOG"
     ;;
 esac
 

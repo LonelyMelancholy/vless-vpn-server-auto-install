@@ -177,7 +177,7 @@ systemctl restart ssh.service
 mkdir /var/log/telegram
 # Install script notify login 
 SSH_ENTER_NOTIFY_SCRIPT="/usr/local/bin/telegram/ssh_enter_notify.sh"
-install -m 700 module/ssh_enter_notify.sh "$SSH_ENTER_NOTIFY_SCRIPT"
+install -m 700 script/ssh_enter_notify.sh "$SSH_ENTER_NOTIFY_SCRIPT"
 echo -e "\n# Notify for success ssh login and logout via telegram bot" >> /etc/pam.d/sshd
 echo "session optional pam_exec.so seteuid $SSH_ENTER_NOTIFY_SCRIPT" >> /etc/pam.d/sshd
 # Disable message of the day, backup and commented 2 lines

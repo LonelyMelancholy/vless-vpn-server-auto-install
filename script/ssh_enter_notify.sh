@@ -4,6 +4,14 @@
 # done work
 #
 
+# sends the script to the background without delaying pam
+# for debugging, add a redirect to the debug log
+if [[ -z "${TG_BG:-}" ]]; then
+    export TG_BG=1
+    "$0" "$@" &> /dev/null &
+    exit 0
+fi
+
 # root check
 [[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 0; }
 
@@ -38,9 +46,9 @@ on_exit() {
 trap 'on_exit' EXIT
 
 # main variables
-readonly HOSTNAME_MSG="$(hostname)"
-readonly IP_MSG="$PAM_RHOST"
-readonly USER_MSG="$PAM_USER"
+readonly HOSTNAME="$(hostname)"
+readonly IP="$PAM_RHOST"
+readonly USER="$PAM_USER"
 readonly SESSION="$PAM_TYPE"
 readonly MAX_ATTEMPTS=3
 
@@ -103,12 +111,12 @@ fi
 
 MESSAGE="$ACTION
 
-🖥️ <b>Host:</b> $HOSTNAME_MSG
+🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
-🧑🏿‍💻 <b>User:</b> $USER_MSG
-🏴 <b>From:</b> $IP_MSG
-💾 <b>Auth log:</b> '/var/log/auth.log'
-💾 <b>Notify log:</b> '$NOTIFY_LOG'"
+🧑🏿‍💻 <b>User:</b> $USER
+🏴 <b>From:</b> $IP
+💾 <b>Auth log:</b> /var/log/auth.log
+💾 <b>Notify log:</b> $NOTIFY_LOG"
 
 # logging message
 echo "########## collected message - $DATE_MESSAGE ##########"
