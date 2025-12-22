@@ -96,7 +96,7 @@ jq --arg tag "$INBOUND_TAG" \
 ' "$XRAY_CONFIG" > "$TMP_XRAY_CONFIG"
 
 trap 'rm -rf "$TMP_XRAY_CONFIG"' EXIT
-run_and_check "xray config checking" "$XRAY_BIN" run -test -config "$TMP_XRAY_CONFIG"
+run_and_check "xray config checking" sudo -u xray xray run -test -config "$TMP_XRAY_CONFIG"
 run_and_check "install xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
 run_and_check "delete temporary xray files " rm -rf "$TMP_XRAY_CONFIG"
 
@@ -178,9 +178,9 @@ fi
 
 # print result
 if [[ "$RESTART_REQ" == "1" ]]; then
-echo "User added, name: $USERNAME, created: $CREATED, days: $DAYS expiration: $EXP"
+echo "User added, name: $USERNAME, created: $CREATED, days: $DAYS, expiration: $EXP"
 echo "VLESS link: $VLESS_URI"
 else
-echo "User added, name: $USERNAME, created: $CREATED, days: $DAYS expiration: $EXP" > URI
+echo "User added, name: $USERNAME, created: $CREATED, days: $DAYS, expiration: $EXP" > URI
 echo "VLESS link: $VLESS_URI" >> URI
 fi

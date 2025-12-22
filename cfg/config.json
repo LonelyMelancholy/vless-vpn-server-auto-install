@@ -35,10 +35,10 @@
         "network": "tcp",
         "security": "reality",
         "realitySettings": {
-          "dest": "site.com:443",
-          "privateKey": "private_key",
-          "serverNames": ["site.com", "www.site.com"],
-          "shortIds": ["short_ids"],
+          "dest": "",
+          "privateKey": "",
+          "serverNames": [""],
+          "shortIds": [""],
           "show": false,
           "xver": 0
         },

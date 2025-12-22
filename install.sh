@@ -86,22 +86,28 @@ run_and_check "set permissions on a secret file" chmod 600 "$ENV_FILE"
 # create ssh group for login
 SSH_GROUP="ssh-users"
 if ! getent group "$SSH_GROUP" >/dev/null 2>&1; then
-    run_and_check "adding SSH group" addgroup "$SSH_GROUP"
+    run_and_check "adding SSH group" addgroup "$SSH_GROUP" &> /dev/null
 else 
     echo "✅ Success: group $SSH_GROUP already exists"
 fi
 
 # create user and add in ssh and sudo group
-run_and_check "creating user and added to $SSH_GROUP and sudo groups" useradd -m -s /bin/bash -G sudo,"$SSH_GROUP" "$SECOND_USER"
+if ! getent shadow "$SECOND_USER" >/dev/null 2>&1; then
+    run_and_check "creating user and added to $SSH_GROUP and sudo groups" useradd -m -s /bin/bash -G sudo,"$SSH_GROUP" "$SECOND_USER"
+else 
+    echo "✅ Success: user $SECOND_USER already exists"
+    run_and_check "added $SECOND_USER to $SSH_GROUP and sudo groups" usermod -aG sudo,"$SSH_GROUP" "$SECOND_USER"
+fi
 
 # changing password for root and user
-run_and_check "root and $SECOND_USER passwords change" printf 'root:%s\n%s:%s\n' "$PASS" "$SECOND_USER" "$PASS" | chpasswd
+# run_and_check "root and $SECOND_USER passwords change" 
+printf 'root:%s\n%s:%s\n' "$PASS" "$SECOND_USER" "$PASS" | chpasswd
 
 
 # done
 # SSH Configuration
 # variables
-SSH_CONF_SOURCE="/cfg/ssh.cfg"
+SSH_CONF_SOURCE="cfg/ssh.cfg"
 SSH_CONF_DEST="/etc/ssh/sshd_config.d/99-custom_security.conf"
 LOW="40000"
 HIGH="50000"
@@ -136,7 +142,7 @@ PRIV_KEY_PATH="${SSH_DIR}/${KEY_NAME}"
 PUB_KEY_PATH="${PRIV_KEY_PATH}.pub"
 
 # create .ssh folder
-run_and_check "creating directory for ssh keys" mkdir "$SSH_DIR"
+run_and_check "creating directory for ssh keys" mkdir -p "$SSH_DIR"
 
 # key generation for ssh
 run_and_check "generating ssh key" ssh-keygen -t ed25519 -N "" -f "$PRIV_KEY_PATH" -q
@@ -155,7 +161,10 @@ run_and_check "restart sshd" systemctl restart ssh.socket
 # done
 # Install ssh login/logout notify and disable MOTD
 # install log directory
-run_and_check "creating directory for all telegram script log" mkdir /var/log/telegram
+run_and_check "creating directory for all telegram script log" mkdir -p /var/log/telegram
+mkdir -p /usr/local/bin/telegram
+mkdir -p /usr/local/bin/service
+
 # install script
 SSH_ENTER_NOTIFY_SCRIPT_SOURCE=script/ssh_enter_notify.sh
 SSH_ENTER_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_enter_notify.sh"
@@ -172,7 +181,7 @@ run_and_check "disable MOTD in PAM setting" sed -ri 's/^([[:space:]]*session[[:s
 
 # done
 # Install and setup fail2ban
-install_with_retry "install fail2ban package" apt-get install -y fail2ban
+install_with_retry "install fail2ban package" apt-get install -y fail2ban &> /dev/null
 # Install ssh jail
 F2B_CONF_SOURCE="cfg/jail.local"
 F2B_CONF_DEST="/etc/fail2ban/jail.local"
@@ -186,7 +195,7 @@ SSH_BAN_NOTIFY_SCRIPT_SOURCE="script/ssh_ban_notify.sh"
 SSH_BAN_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_ban_notify.sh"
 run_and_check "telegram notification ban/unban script installation" install -m 700 -o root -g root "$SSH_BAN_NOTIFY_SCRIPT_SOURCE" "$SSH_BAN_NOTIFY_SCRIPT_DEST"
 # Start fail2ban
-run_and_check "enable and start fail2ban service" systemctl enable --now fail2ban
+run_and_check "enable and start fail2ban service" systemctl enable --now fail2ban &> /dev/null
 
 
 # done
@@ -205,7 +214,7 @@ chmod 644 "/etc/cron.d/traffic_notify" || { echo "❌ Error: set permissions on 
 
 # done
 # unattended upgrade and reboot script
-install_with_retry "install unattended upgrades package" apt-get install -y unattended-upgrades
+install_with_retry "install unattended upgrades package" apt-get install -y unattended-upgrades &> /dev/null
 
 run_and_check "changing package settings" tee /etc/apt/apt.conf.d/20auto-upgrades >/dev/null <<'EOF'
 APT::Periodic::Update-Package-Lists "0";
@@ -249,12 +258,18 @@ WantedBy=multi-user.target
 EOF
 
 run_and_check "reload systemd" systemctl daemon-reload
-run_and_check "enable server boot notification service" systemctl enable boot_notify.service
+run_and_check "enable server boot notification service" systemctl enable boot_notify.service &> /dev/null
 
 
 # done
 # xray install
-run_and_check "create user for the xray service" useradd -r -M -d /nonexistent -s /usr/sbin/nologin xray
+
+# create user and add in ssh and sudo group
+if ! getent shadow xray &> /dev/null; then
+    run_and_check "create user for the xray service" useradd -r -M -d /nonexistent -s /usr/sbin/nologin xray
+else 
+    echo "✅ Success: user $SECOND_USER already exists"
+fi
 
 run_and_check "create directory for the xray service" mkdir -p /usr/local/share/xray && mkdir -p /usr/local/etc/xray \
     && mkdir -p /var/log/xray && chown xray:xray /var/log/xray
@@ -404,8 +419,8 @@ download_and_verify "$GEOIP_URL" "$TMP_DIR/geoip.dat" "geoip.dat"
 download_and_verify "$GEOSITE_URL" "$TMP_DIR/geosite.dat" "geosite.dat"
 
 run_and_check "install xray binary" install -m 755 -o root -g root $UNPACK_DIR/xray /usr/local/bin/xray
-run_and_check "install geoip.dat" -m 644 -o root -g root $TMP_DIR/geoip.dat /usr/local/share/xray/geoip.dat
-run_and_check "install geosite.dat" -m 644 -o root -g root $TMP_DIR/geosite.dat /usr/local/share/xray/geosite.dat
+run_and_check "install geoip.dat" install -m 644 -o root -g root $TMP_DIR/geoip.dat /usr/local/share/xray/geoip.dat
+run_and_check "install geosite.dat" install -m 644 -o root -g root $TMP_DIR/geosite.dat /usr/local/share/xray/geosite.dat
 
 # configure xray service
 XRAY_CONFIG_SRC="cfg/config.json"
@@ -439,14 +454,17 @@ DEST="${XRAY_HOST}:${XRAY_PORT}"
 
 # key generation
 keys="$(xray x25519)"
-privateKey="$(awk -F': ' '/Private key/ {print $2}' <<<"$keys")"
-publicKey="$(awk -F': ' '/Password:/ {print $2}' <<<"$keys")"
+privateKey="$(awk -F': ' '/PrivateKey/ {print $2}' <<<"$keys")"
+publicKey="$(awk -F': ' '/Password/ {print $2}' <<<"$keys")"
 
 # shortId generation
 shortId="$(openssl rand -hex 8)"
 
 # update json
 TMP_XRAY_CONFIG="$(mktemp)"
+touch "${TMP_XRAY_CONFIG}.json"
+TMP_XRAY_CONFIG="${TMP_XRAY_CONFIG}.json"
+
 jq --arg dest "$DEST" \
    --arg sni  "$XRAY_HOST" \
    --arg pk   "$privateKey" \
@@ -464,9 +482,8 @@ jq --arg dest "$DEST" \
   ))
 ' "$XRAY_CONFIG_SRC" > "$TMP_XRAY_CONFIG"
 
-
 trap 'rm -rf "$TMP_XRAY_CONFIG" "$TMP_DIR"' EXIT
-run_and_check "xray config checking" xray run -test -config "$TMP_XRAY_CONFIG" >/dev/null
+run_and_check "xray config checking" sudo -u xray xray run -test -config "$TMP_XRAY_CONFIG" &> /dev/null
 run_and_check "install xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG_DEST"
 run_and_check "delete temporary xray files " rm -rf "$TMP_XRAY_CONFIG" "$TMP_DIR"
 
@@ -474,7 +491,8 @@ bash script/useradd.sh "$XRAY_NAME" "$XRAY_DAYS" 0
 
 # Запускаем сервер
 run_and_check "reload systemd" systemctl daemon-reload
-run_and_check "enable xray service" systemctl enable --now xray.service
+run_and_check "enable autostart xray service" systemctl enable xray.service
+run_and_check "start xray service" systemctl start xray.service
 
 
 # done
