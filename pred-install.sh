@@ -96,7 +96,7 @@ install_and_update() {
 
 # utilities check
 missing_pkgs=()
-for utility in curl unzip; do
+for utility in curl unzip jq openssl; do
     if ! command -v "$utility" &> /dev/null; then
         missing_pkgs+=("$utility")
     fi

@@ -29,21 +29,16 @@
       "settings": {
         "decryption": "none",
         "clients": [
-          {
-            "email": "name_VPN",
-            "flow": "xtls-rprx-vision",
-            "id": "uuid_uuid"
-          }
         ]
       },
       "streamSettings": {
         "network": "tcp",
         "security": "reality",
         "realitySettings": {
-          "dest": "github.com:443",
-          "privateKey": "privatkey",
-          "serverNames": ["github.com", "www.github.com"],
-          "shortIds": ["shortid"],
+          "dest": "site.com:443",
+          "privateKey": "private_key",
+          "serverNames": ["site.com", "www.site.com"],
+          "shortIds": ["short_ids"],
           "show": false,
           "xver": 0
         },

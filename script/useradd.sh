@@ -1,196 +1,183 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/bash
+#
+#
 
-# ---------------- НАСТРОЙКИ ----------------
-
-CONFIG="/usr/local/etc/xray/config.json"
-XRAY_BIN="/usr/local/xray/xray"
-INBOUND_TAG="Vless"         # tag из твоего инбаунда
-DEFAULT_FLOW="xtls-rprx-vision"
-
-# -------------- ПРОВЕРКА АРГУМЕНТОВ --------
-
-if [ "$#" -ne 1 ]; then
-  echo "Использование: $0 <username>" >&2
-  exit 1
-fi
-
+# main variables
+readonly XRAY_CONFIG="/usr/local/etc/xray/config.json"
+readonly XRAY_BIN="/usr/local/bin/xray"
+readonly INBOUND_TAG="Vless"
+readonly DEFAULT_FLOW="xtls-rprx-vision"
 USERNAME="$1"
+DAYS="$2"
+RESTART_REQ="${3:-1}"
 
-if [ ! -f "$CONFIG" ]; then
-  echo "Не найден конфиг Xray: $CONFIG" >&2
-  exit 1
+# argument check
+if [[ "$#" -ne 2 ]]; then
+    echo "Use for add user in xray config, run: $0 <username> <days>"
+    echo "0 - infinity days"
+    exit 1
 fi
 
-if ! command -v jq >/dev/null 2>&1; then
-  echo "Нужен jq (sudo apt install jq)" >&2
-  exit 1
+if ! [[ "$DAYS" =~ ^[0-9]+$ ]]; then
+    echo "❌ Error: days must be non negative number, exit"
+    exit 1
 fi
 
-# -------------- ГЕНЕРАЦИЯ UUID --------------
+# function error helper
+run_and_check() {
+    local action="$1"
+    shift 1
+    if "$@" > /dev/null; then
+        echo "✅ Success: $action"
+        return 0
+    else
+        echo "❌ Error: $action, exit"
+        exit 1
+    fi
+}
 
-if [ -x "$XRAY_BIN" ]; then
-  UUID="$("$XRAY_BIN" uuid | tr -d '\r\n')"
-elif command -v uuidgen >/dev/null 2>&1; then
-  UUID="$(uuidgen)"
+# calculate exp and created date
+CREATED="$(date +%F)"
+
+# write variable
+if [[ "$DAYS" == "0" ]]; then
+    XRAY_EMAIL="${USERNAME}|created=${CREATED}|days=infinity|exp=never"
+    DAYS="infinity"
+    EXP="never"
 else
-  echo "Нужен либо $XRAY_BIN, либо uuidgen для генерации UUID" >&2
-  exit 1
+    EXP="$(date -d "$CREATED + $DAYS days" +%F)"
+    XRAY_EMAIL="${USERNAME}|created=${CREATED}|days=${DAYS}|exp=${EXP}"
 fi
 
-# -------------- ПРОВЕРКА INBOUND ------------
+# config check
+if [[ ! -f "$XRAY_CONFIG" ]]; then
+    echo "❌ Error: config xray not found in $XRAY_CONFIG, exit"
+    exit 1
+fi
 
+# check inbound
 HAS_INBOUND="$(jq --arg tag "$INBOUND_TAG" '
   any(.inbounds[]?; .tag == $tag and .protocol == "vless")
-' "$CONFIG")"
+' "$XRAY_CONFIG")"
 
 if [ "$HAS_INBOUND" != "true" ]; then
-  echo "В конфиге нет vless-inbound с tag=\"$INBOUND_TAG\"" >&2
+  echo "❌ Error: config not have vless-inbound, tag=\"$INBOUND_TAG\", exit"
   exit 1
 fi
 
-# -------------- ДОБАВЛЯЕМ ЮЗЕРА В CONFIG ----
+# uuid generation
+if [ -x "$XRAY_BIN" ]; then
+    UUID="$("$XRAY_BIN" uuid)"
+else
+    echo "❌ Error: not found $XRAY_BIN, for UUID generation, exit"
+    exit 1
+fi
 
-TMP_CFG="$(mktemp)"
+# add user
+TMP_XRAY_CONFIG="$(mktemp)"
+touch "${TMP_XRAY_CONFIG}.json"
+TMP_XRAY_CONFIG="${TMP_XRAY_CONFIG}.json"
 
-# берём flow из первого клиента, если есть, иначе DEFAULT_FLOW
 jq --arg tag "$INBOUND_TAG" \
+   --arg email "$XRAY_EMAIL" \
    --arg id "$UUID" \
-   --arg email "$USERNAME" \
    --arg dflow "$DEFAULT_FLOW" '
   (.inbounds[] | select(.tag==$tag) | .settings.clients[0].flow // $dflow) as $flow
   | .inbounds = (.inbounds | map(
       if .tag == $tag and .protocol == "vless" then
         .settings.clients += [{
-          "id": $id,
           "email": $email,
+          "id": $id,
           "flow": $flow
         }]
       else .
       end
     ))
-' "$CONFIG" > "$TMP_CFG"
+' "$XRAY_CONFIG" > "$TMP_XRAY_CONFIG"
 
-# опционально можно проверить конфиг через xray run -test
-if [ -x "$XRAY_BIN" ]; then
-  if ! "$XRAY_BIN" run -test -c "$TMP_CFG" >/dev/null 2>&1; then
-    echo "Новый конфиг не прошёл xray run -test, изменения не применены" >&2
-    rm -f "$TMP_CFG"
-    exit 1
-  fi
-fi
+trap 'rm -rf "$TMP_XRAY_CONFIG"' EXIT
+run_and_check "xray config checking" "$XRAY_BIN" run -test -config "$TMP_XRAY_CONFIG"
+run_and_check "install xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "delete temporary xray files " rm -rf "$TMP_XRAY_CONFIG"
 
-mv "$TMP_CFG" "$CONFIG"
-
-# -------------- ВЫТАСКИВАЕМ REALITY ПАРАМЫ --
-
+# start make link, get inbound paremetres
 PORT="$(jq -r --arg tag "$INBOUND_TAG" '
   .inbounds[] | select(.tag==$tag) | .port
-' "$CONFIG")"
+' "$XRAY_CONFIG")"
 
 REALITY_DEST="$(jq -r --arg tag "$INBOUND_TAG" '
   .inbounds[] | select(.tag==$tag) | .streamSettings.realitySettings.dest // ""
-' "$CONFIG")"
+' "$XRAY_CONFIG")"
 
 REALITY_SNI="$(jq -r --arg tag "$INBOUND_TAG" '
   .inbounds[] | select(.tag==$tag) | .streamSettings.realitySettings.serverNames[0] // ""
-' "$CONFIG")"
+' "$XRAY_CONFIG")"
 
 PRIVATE_KEY="$(jq -r --arg tag "$INBOUND_TAG" '
   .inbounds[] | select(.tag==$tag) | .streamSettings.realitySettings.privateKey // ""
-' "$CONFIG")"
+' "$XRAY_CONFIG")"
 
 SHORT_ID="$(jq -r --arg tag "$INBOUND_TAG" '
   .inbounds[] | select(.tag==$tag) | .streamSettings.realitySettings.shortIds[0] // ""
-' "$CONFIG")"
+' "$XRAY_CONFIG")"
+
+FLOW="$(jq -r --arg tag "$INBOUND_TAG" '
+  .inbounds[] | select(.tag==$tag) | .settings.clients[0].flow // ""
+' "$XRAY_CONFIG")"
 
 if [ -z "$PRIVATE_KEY" ]; then
-  echo "Не найден privateKey в realitySettings данного inbound" >&2
+  echo "❌ Error: privateKey not found in realitySettings inbound"
   exit 1
 fi
 
 if [ -z "$SHORT_ID" ]; then
-  echo "Не найден shortIds[0] в realitySettings данного inbound" >&2
+  echo "❌ Error: not found shortIds in realitySettings inbound"
   exit 1
 fi
 
-# -------------- ПОЛУЧАЕМ pbk ИЗ privateKey --
-
-if [ ! -x "$XRAY_BIN" ]; then
-  echo "Для получения pbk нужен $XRAY_BIN (xray x25519 -i)" >&2
-  exit 1
-fi
-
+# generate public key from privat key
 XRAY_X25519_OUT="$("$XRAY_BIN" x25519 -i "$PRIVATE_KEY")"
 
-# В разных версиях в выводе может быть "Public key:" или "Password:"
-PBK="$(printf '%s\n' "$XRAY_X25519_OUT" | awk -F': ' '/Public key:|Password:/ {print $2}' | tail -n1)"
+PBK="$(printf '%s\n' "$XRAY_X25519_OUT" | awk -F': ' '/Password:/ {print $2}')"
 
 if [ -z "$PBK" ]; then
-  echo "Не удалось вытащить pbk (publicKey/password) из вывода xray x25519" >&2
+  echo "❌ Error: empty publicKey/password, exit"
   exit 1
 fi
 
-# -------------- ОПРЕДЕЛЯЕМ АДРЕС СЕРВЕРА ----
-
-SERVER_HOST=""
-
-if command -v curl >/dev/null 2>&1; then
-  SERVER_HOST="$(curl -4 -s https://ifconfig.io || curl -4 -s https://ipinfo.io/ip || echo "")"
-fi
+# get server ip
+SERVER_HOST="$(curl -4 -s https://ifconfig.io || curl -4 -s https://ipinfo.io/ip || echo "")"
 
 if [ -z "$SERVER_HOST" ]; then
-  SERVER_HOST="SERVER_IP"  # плейсхолдер, если не смогли определить
+    SERVER_HOST="SERVER_IP"  # плейсхолдер, если не смогли определить
 fi
 
-# -------------- СБОРКА VLESS URI ------------
+# make uri link
 
-# небольшая helper-функция для URL-энкодинга через jq
 uri_encode() {
-  printf '%s' "$1" | jq -sRr @uri
+    printf '%s' "$1" | jq -sRr @uri
 }
-
-FLOW="$(jq -r --arg tag "$INBOUND_TAG" '
-  .inbounds[] | select(.tag==$tag) | .settings.clients[0].flow // "'$DEFAULT_FLOW'"
-' "$CONFIG")"
-
-[ -z "$FLOW" ] && FLOW="$DEFAULT_FLOW"
 
 QUERY="encryption=none"
 QUERY="${QUERY}&flow=$(uri_encode "$FLOW")"
 QUERY="${QUERY}&security=reality"
 QUERY="${QUERY}&type=tcp"
-
 if [ -n "$REALITY_SNI" ]; then
-  QUERY="${QUERY}&sni=$(uri_encode "$REALITY_SNI")"
+    QUERY="${QUERY}&sni=$(uri_encode "$REALITY_SNI")"
 fi
-
-# fingerprint для uTLS, обычно chrome
 QUERY="${QUERY}&fp=$(uri_encode "chrome")"
-
-# pbk (password/publicKey) и sid (shortId)
 QUERY="${QUERY}&pbk=$(uri_encode "$PBK")"
 QUERY="${QUERY}&sid=$(uri_encode "$SHORT_ID")"
-
 NAME_ENC="$(uri_encode "$USERNAME")"
+VLESS_URI="vless://${UUID}@${SERVER_HOST}:${PORT}/?${QUERY}#${NAME_ENC}"
 
-VLESS_URI="vless://${UUID}@${SERVER_HOST}:${PORT}?${QUERY}#${NAME_ENC}"
-
-# -------------- ПЕРЕЗАПУСК XRAY -------------
-
-if command -v systemctl >/dev/null 2>&1; then
-  systemctl restart xray || echo "Внимание: systemctl restart xray завершился с ошибкой, проверь статус" >&2
+# restart xray for enable user
+if [[ "$RESTART_REQ" == "1" ]]; then
+run_and_check "restart xray service" systemctl restart xray.service
 fi
 
-# -------------- ВЫВОД -----------------------
-
-echo "Добавлен пользователь:"
-echo "  Name: $USERNAME"
-echo "  UUID: $UUID"
-echo
-echo "VLESS REALITY ссылка:"
-echo "$VLESS_URI"
-echo
-echo "Примечание:"
-echo "  Address в ссылке: $SERVER_HOST (если там SERVER_IP — замени на реальный IP/домен своего сервера при необходимости)."
-echo "  SNI: $REALITY_SNI, dest: $REALITY_DEST"
+# print result
+if [[ "$RESTART_REQ" == "1" ]]; then
+echo "User added, name: $USERNAME, created: $CREATED, days: $DAYS expiration: $EXP"
+echo "VLESS link: $VLESS_URI"
+fi

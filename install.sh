@@ -30,24 +30,22 @@ has_cmd() {
 
 install_with_retry() {
     local action="$1"
-    shift 1
     local attempt=1
+    shift 1
 
     while true; do
         echo "📢 Info: ${action}, attempt $attempt, please wait"
         # $@ passes all remaining arguments (after the first one)
         if "$@"; then
-            echo "✅ Success: $action"
+            echo "✅ Success: $action, after ${attempt} attempts"
             return 0
-            
         fi
         if [[ "$attempt" -lt "$MAX_ATTEMPTS" ]]; then
             sleep 60
-            echo "⚠️  Non-critical error: $action failed, trying again"
             ((attempt++))
             continue
         else
-            echo "❌ Error: $action, attempts ended, exit"
+            echo "❌ Error: $action, after ${attempt} attempts, exit"
             exit 1
         fi
     done
@@ -254,29 +252,166 @@ run_and_check "reload systemd" systemctl daemon-reload
 run_and_check "enable server boot notification service" systemctl enable boot_notify.service
 
 
-#
+# done
 # xray install
-
 run_and_check "create user for the xray service" useradd -r -M -d /nonexistent -s /usr/sbin/nologin xray
 
 run_and_check "create directory for the xray service" mkdir -p /usr/local/share/xray && mkdir -p /usr/local/etc/xray \
     && mkdir -p /var/log/xray && chown xray:xray /var/log/xray
 
+TMP_DIR="$(mktemp -d)" || { echo "❌ Error: to create temporary directory, exit"; exit 1; }
+readonly TMP_DIR
 
+# download function
+_dl() { curl -fsSL --max-time 60 "$1" -o "$2"; }
 
-отсюда делать
+_dl_with_retry() {
+    local url="$1"
+    local outfile="$2"
+    local label="$3"
+    local attempt=1
 
-dl_with_retry https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip Xray-linux-64.zip
+    while true; do
+        echo "📢 Info: download ${label}, attempt ${attempt}, please wait"
+        if ! _dl "$url" "$outfile"; then
+            if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
+                echo "❌ Error: download ${label} after ${attempt} attempts, exit"
+                return 1
+            fi
+            sleep 60
+            (($attempt++))
+            continue
+        else
+            echo "✅ Success: download ${label} after ${attempt} attempts"
+            return 0
+        fi
+    done
+}
 
-unzip Xray-linux-64.zip
+# download and check checksum function
+download_and_verify() {
+    local url="$1"
+    local outfile="$2"
+    local name="$3"
+    local sha256sum_file="${outfile}.sha256sum"
+    local dgst_file="${outfile}.dgst"
+    local expected_sha actual_sha
+    UNPACK_DIR="$TMP_DIR/xray-unpacked"
 
-install -m 755 xray /usr/local/bin/xray
+    # download main file
+    _dl_with_retry "$url" "$outfile" "$name" || exit 1
 
-install -m 644 geosite.dat /usr/local/share/xray/geosite.dat
-install -m 644 geoip.dat /usr/local/share/xray/geoip.dat
+    # download checksum depending on the name there are two ways
+    # download .dgst checksum if name xray
+    if [ "$name" = "xray" ]; then
+        _dl_with_retry "${url}.dgst" "$dgst_file" "${name}.dgst" || exit 1
+    # download checksum if other name (geoip.dat, geosite.dat)
+    else
+        _dl_with_retry "${url}.sha256sum" "$sha256sum_file" "${name}.sha256sum" || exit 1
+    fi
 
+# extract sha256sum from .dgst or .sha256sum depending on the name there are two ways
+# reset sha
+    expected_sha=""
+# extract sha256sum from .dgst if name xray
+        if [ "$name" = "xray" ]; then
+            expected_sha="$(awk '/^SHA2-256/ {print $2}' "$dgst_file")"
+            if [ -z "$expected_sha" ]; then
+                echo "❌ Error: parse SHA256 from ${dgst_file}, exit"
+                exit 1
+            else
+                echo "✅ Success: parse SHA256 from ${dgst_file}"
+            fi
+# extract sha256sum from .sha256sum if other name (geoip.dat, geosite.dat)
+        else
+            expected_sha="$(awk '{print $1}' "$sha256sum_file" 2>/dev/null)"
+            if [ -z "$expected_sha" ]; then
+                echo "❌ Error: parse SHA256 from ${sha256sum_file}, exit"
+                exit 1
+            else
+                echo "✅ Success: parse SHA256 from ${sha256sum_file}"
+            fi
+        fi
 
-tee /etc/systemd/system/xray.service > /dev/null <<'EOF'
+# extract actual sha256sum from .zip or .dat
+# reset sha
+        actual_sha=""
+            actual_sha="$(sha256sum "$outfile" 2>/dev/null | awk '{print $1}')"
+            if [ -z "$actual_sha" ]; then
+                echo "❌ Error: extract SHA256 from ${outfile}, exit"
+                exit 1
+            else
+                echo "✅ Success: extraction SHA256 from ${outfile}"
+            fi
+
+    local expected_label actual_label
+    # compare sha256sum checksum depending on the name there are two ways
+    # compare sha256sum checksum if name xray
+    if [ "$name" = "xray" ]; then
+        expected_label=".dgst"
+        actual_label=".zip"
+    # compare sha256sum checksum if other name (geoip.dat, geosite.dat)
+    else
+        expected_label=".sha256sum"
+        actual_label=".dat"
+    fi
+
+    if [ "$expected_sha" != "$actual_sha" ]; then
+        echo "📢 Info: expected SHA256 from ${expected_label}: $expected_sha"
+        echo "📢 Info: actual SHA256 from ${actual_label}: $actual_sha"
+        echo "❌ Error: compare, actual and expected SHA256 do not match for ${name}, exit"
+        exit 1
+    else
+        echo "📢 Info: expected SHA256 from ${expected_label}: $expected_sha"
+        echo "📢 Info: actual SHA256 from ${actual_label}: $actual_sha"
+        echo "✅ Success: actual and expected SHA256 match for ${name}"
+    fi
+
+# unzip archive if name xray
+    if [ "$name" = "xray" ]; then
+
+# unpack archive
+        if ! mkdir -p "$UNPACK_DIR"; then
+            echo "❌ Error: create directory for unpacking ${outfile}, exit"
+            exit 1
+        else
+            echo "✅ Success: directory for unpacking ${outfile} has been created"
+        fi
+        if ! unzip -o "$outfile" -d "$UNPACK_DIR" >/dev/null 2>&1; then
+            echo "❌ Error: extract ${outfile}, exit"
+            exit 1
+        else
+            echo "✅ Success: ${outfile} successfully extracted"
+        fi
+# check xray binary
+        if [ ! -f "$UNPACK_DIR/xray" ]; then
+            echo "❌ Error: xray binary is missing from folder after unpacking ${outfile}, exit"
+            exit 1
+        else
+            echo "✅ Success: xray binary exists in the folder after unpacking ${outfile}"
+        fi
+    fi
+
+    return 0
+}
+
+readonly XRAY_URL="https://github.com/XTLS/xray-core/releases/latest/download/xray-linux-64.zip"
+readonly GEOIP_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
+readonly GEOSITE_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
+
+download_and_verify "$XRAY_URL" "$TMP_DIR/xray-linux-64.zip" "xray"
+download_and_verify "$GEOIP_URL" "$TMP_DIR/geoip.dat" "geoip.dat"
+download_and_verify "$GEOSITE_URL" "$TMP_DIR/geosite.dat" "geosite.dat"
+
+run_and_check "install xray binary" install -m 755 -o root -g root $UNPACK_DIR/xray /usr/local/bin/xray
+run_and_check "install geoip.dat" -m 644 -o root -g root $TMP_DIR/geoip.dat /usr/local/share/xray/geoip.dat
+run_and_check "install geosite.dat" -m 644 -o root -g root $TMP_DIR/geosite.dat /usr/local/share/xray/geosite.dat
+
+# configure xray service
+XRAY_CONFIG_SRC="cfg/config.json"
+XRAY_CONFIG_DEST="/usr/local/etc/xray/config.json"
+
+run_and_check "create xray systemd service" tee /etc/systemd/system/xray.service > /dev/null <<EOF
 [Unit]
 Description=Xray-core VLESS server
 After=network-online.target
@@ -284,7 +419,7 @@ After=network-online.target
 [Service]
 User=xray
 Group=xray
-ExecStart=/usr/local/bin/xray run -config /usr/local/etc/xray/config.json
+ExecStart=/usr/local/bin/xray run -config $XRAY_CONFIG_DEST
 Restart=on-failure
 RestartPreventExitStatus=23
 RestartSec=5
@@ -298,21 +433,48 @@ LimitNOFILE=1000000
 WantedBy=multi-user.target
 EOF
 
-# зделать права 600 и пользователя и группу храй
-# Закидываем конфиг
-install -m 644 cfg/config.json "/usr/local/etc/xray/config.json"
+# configure json 
+XRAY_PORT="443"
+DEST="${XRAY_HOST}:${XRAY_PORT}"
 
-# тут надо в конфиг добавить пароли
+# key generation
+keys="$(xray x25519)"
+privateKey="$(awk -F': ' '/Private key/ {print $2}' <<<"$keys")"
+publicKey="$(awk -F': ' '/Password:/ {print $2}' <<<"$keys")"
 
+# shortId generation
+shortId="$(openssl rand -hex 8)"
+
+# update json
+TMP_XRAY_CONFIG="$(mktemp)"
+jq --arg dest "$DEST" \
+   --arg sni  "$XRAY_HOST" \
+   --arg pk   "$privateKey" \
+   --arg sid  "$shortId" '
+  .inbounds |= (map(
+    if (.protocol=="vless" and (.streamSettings.security?=="reality") and (.streamSettings.realitySettings?!=null))
+    then .streamSettings.realitySettings |= (
+      .dest=$dest
+      | .serverNames=[$sni]
+      | .privateKey=$pk
+      | .shortIds=[$sid]
+    )
+    else .
+    end
+  ))
+' "$XRAY_CONFIG_SRC" > "$TMP_XRAY_CONFIG"
+
+
+trap rm -rf "$TMP_XRAY_CONFIG" "$TMP_DIR" EXIT
+run_and_check "xray config checking" xray run -test -config "$TMP_XRAY_CONFIG" >/dev/null
+run_and_check "install xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG_DEST"
+run_and_check "delete temporary xray files " rm -rf "$TMP_XRAY_CONFIG" "$TMP_DIR"
+
+script/useradd.sh "$VLESS_NAME" "$VLESS_DAYS" 0
 
 # Запускаем сервер
-systemctl daemon-reload
-systemctl enable --now xray.service
-
-
-
-
-
+run_and_check "reload systemd" systemctl daemon-reload
+run_and_check "enable xray service" systemctl enable --now xray.service
 
 
 # done
@@ -329,6 +491,7 @@ chmod 644 "/etc/cron.d/geodat_update" || { echo "❌ Error: set permissions on t
 
 
 # done
+echo "#################################################"
 echo
 echo "########## PRIVATE KEY - $PRIV_KEY_PATH ##########"
 echo
@@ -338,9 +501,12 @@ echo "########## PUBLIC KEY - $PUB_KEY_PATH ##########"
 echo
 cat "$PUB_KEY_PATH"
 echo
-echo "################################################"
+echo "########## User added - $USERNAME ##########"
+echo
+echo "created: $CREATED, days: $DAYS expiration: $EXP"
+echo "VLESS link: $VLESS_URI"
 echo
 echo "########## SSH server port - ${PORT} ##########"
 echo
-echo "################################################"
+echo "#################################################"
 echo

@@ -20,10 +20,10 @@ fi
 
 if [[ "$SECOND_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,31}$ ]]; then
     sleep 1
-    echo "✅ Success: username accepted"
+    echo "✅ Success: server administrator username accepted"
 else
     sleep 1
-    echo "❌ Error: name '$SECOND_USER' does not comply with Linux rules, exit"
+    echo "❌ Error: username '$SECOND_USER' does not comply with Linux rules, exit"
     exit 1
 fi
 
@@ -68,4 +68,37 @@ if [[ -z "$UBUNTU_PRO_TOKEN" ]]; then
 else
     sleep 1
     echo "✅ Success: Ubuntu Pro token accepted"
+fi
+
+# check dest
+VLESS_HOST=$(awk -F'"' '/^[[:space:]]*Dest/ {print $2}' "$CFG_FILE")
+if [[ -z "$VLESS_HOST" ]]; then
+    sleep 1
+    echo "❌ Error: 'Dest' is empty in '$CFG_FILE', exit"
+    exit 1
+else
+    sleep 1
+    echo "✅ Success: dest accepted"
+fi
+
+# check name
+VLESS_NAME=$(awk -F'"' '/^[[:space:]]*Name/ {print $2}' "$CFG_FILE")
+if [[ -z "$VLESS_NAME" ]]; then
+    sleep 1
+    echo "❌ Error: 'Name' is empty in '$CFG_FILE', exit"
+    exit 1
+else
+    sleep 1
+    echo "✅ Success: name accepted"
+fi
+
+# check days
+VLESS_DAYS=$(awk -F'"' '/^[[:space:]]*Days/ {print $2}' "$CFG_FILE")
+if [[ -z "$VLESS_HOST" ]]; then
+    sleep 1
+    echo "❌ Error: 'Days' is empty in '$CFG_FILE', exit"
+    exit 1
+else
+    sleep 1
+    echo "✅ Success: days accepted"
 fi
