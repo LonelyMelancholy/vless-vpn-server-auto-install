@@ -121,11 +121,14 @@ sum_server() {
 }
 SERVER_TOTAL="$(sum_server "$DATA")"
 
-# calculate total traffic each user
+# calculate total traffic each user and cut | info
 sum_users() {
   local lines="$1"
   awk -F: '
-    $1=="user" { u[$2] += ($3+0) }
+    $1=="user" {
+      split($2, a, "|")
+      u[a[1]] += ($3+0)
+    }
     END { for (k in u) printf "%s %d\n", k, u[k] }
   ' <<<"$lines" | LC_ALL=C sort
 }

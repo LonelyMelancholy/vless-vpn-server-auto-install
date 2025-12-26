@@ -1,10 +1,10 @@
 #!/bin/bash
 # xray auto traffic notify via cron every day 1:01 night time
 # all errors are logged, except the first three, for debug add debug log in cron
-# 0 1 * * * /usr/local/bin/telegram/exp_notify.sh &> /dev/null
+# 10 1 * * * /usr/local/bin/telegram/exp_notify.sh &> /dev/null
 # exit codes work to tell Cron about success
-# 
-# 
+# done work
+# done test
 
 # root check
 [[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
@@ -96,59 +96,61 @@ source "$ENV_FILE"
 # get stat json
 readonly RAW="$("$XRAY" api statsquery --server="$APISERVER" 2> /dev/null)"
 
-
-
-отсюда парсинг переделать
-
-
-# parse json to name:name:number
-stat_lines() {
-  local json="$1"
+# parse 
+USERS_LEFT=$(
   jq -r '
-    .stat[]
-    | (.name | split(">>>")) as $p
-    | "\($p[0]):\($p[1]):\(.value // 0)"
-  ' <<<"$json"
-}
-DATA="$(stat_lines "$RAW")"
+    def parse_date: strptime("%Y-%m-%d") | mktime;
+    def today_midnight: (now | strftime("%Y-%m-%d") | parse_date);
 
-# calculate total server traffic
-sum_server() {
-  local lines="$1"
-  awk -F: '
-    $1=="inbound" || $1=="outbound" { s += ($3+0) }
-    END { print s+0 }
-  ' <<<"$lines"
-}
-SERVER_TOTAL="$(sum_server "$DATA")"
+    def parse_userstr:
+      split("|") as $p
+      | {
+          user:   $p[0],
+          created: ($p[1] // "" | split("=")[1] // null),
+          days:    ($p[2] // "" | split("=")[1] // null),
+          exp:     ($p[3] // "" | split("=")[1] // null)
+        };
 
-# calculate total traffic each user
-sum_users() {
-  local lines="$1"
-  awk -F: '
-    $1=="user" { u[$2] += ($3+0) }
-    END { for (k in u) printf "%s %d\n", k, u[k] }
-  ' <<<"$lines" | LC_ALL=C sort
-}
-USER_TOTAL="$(sum_users "$DATA")"
+    def remaining($t):
+      if (.days == "infinity") or (.exp == "never") then
+        "infinity"
+      else
+        (
+          if (.exp != null and (.exp|test("^\\d{4}-\\d{2}-\\d{2}$"))) then
+            (.exp | parse_date)
+          elif (.created != null and .days != null and (.days|test("^\\d+$"))) then
+            ((.created | parse_date) + ((.days|tonumber) * 86400))
+          else
+            null
+          end
+        ) as $end
+        | if $end == null then null else (($end - $t) / 86400 | floor) end
+      end;
 
-# formatting bytes
-fmt(){ numfmt --to=iec --suffix=B "$1"; }
+    [ .stat[].name
+      | select(startswith("user>>>"))
+      | sub("^user>>>";"")
+      | split(">>>traffic")[0]
+    ]
+    | unique
+    | map(parse_userstr | {key: .user, val: (remaining(today_midnight))})
+    | .[]
+    | "\(.key) \(.val)"
+  ' <<< "$RAW"
+)
 
 # start collecting message
 readonly DATE_MESSAGE="$(date '+%Y-%m-%d %H:%M:%S')"
 
-MESSAGE="📢<b> Daily traffic report</b> 
+MESSAGE="📢<b> Daily expiration report</b> 
 
 🖥️ <b>Host:</b> $HOSTNAME
-⌚ <b>Time:</b> $DATE_MESSAGE
-🖥 <b>Host total:</b> $(fmt "$SERVER_TOTAL")"
+⌚ <b>Time:</b> $DATE_MESSAGE"
 
-while IFS=$' ' read -r EMAIL TRAFF; do
-  TRAFFx2=$(( TRAFF * 2 ))
+while IFS=$' ' read -r EMAIL DAYS; do
   MESSAGE="$MESSAGE
-🧑🏿‍💻 <b>User total:</b> $EMAIL - $(fmt "$TRAFFx2")"
-done <<< "$USER_TOTAL"
+🧑🏿‍💻 <b>User:</b> $EMAIL - $DAYS days left"
+done <<< "$USERS_LEFT"
 
 MESSAGE="$MESSAGE
 💾 <b>Xray error log:</b> /var/log/xray/error.log

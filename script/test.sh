@@ -28,13 +28,18 @@ echo "Traffic notify, one time, server must be running"
 /usr/local/bin/telegram/traffic_notify.sh
 sleep 1
 
+# expiration notify
+echo "Expiration notify, one time, server must be running"
+/usr/local/bin/telegram/exp_notify.sh
+sleep 1
+
 # boot notify
 echo "Test boot notify, one time, all service must be running"
 systemctl start boot_notify.service
 sleep 1
 
 # unatended upgrade
-echo "Test unattended upgrade"
-/usr/local/bin/telegram/unattended_upgrade.sh
-sleep 1
+#echo "Test unattended upgrade"
+#/usr/local/bin/telegram/unattended_upgrade.sh
+#sleep 1
 

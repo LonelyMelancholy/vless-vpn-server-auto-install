@@ -185,7 +185,7 @@ run_and_check "ssh login notification script installation" install -m 700 -o roo
 # enable script in PAM
 enable_scr_pam() {
     set -e
-    cat > /etc/pam.d/sshd << EOF
+    cat >> /etc/pam.d/sshd << EOF
 # Notify for success ssh login and logout via telegram bot
 session optional pam_exec.so seteuid $SSH_ENTER_NOTIFY_SCRIPT_DEST
 EOF
@@ -217,7 +217,11 @@ SSH_BAN_NOTIFY_SCRIPT_SOURCE="script/ssh_ban_notify.sh"
 SSH_BAN_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_ban_notify.sh"
 run_and_check "telegram notification ban/unban script install" install -m 700 -o root -g root "$SSH_BAN_NOTIFY_SCRIPT_SOURCE" "$SSH_BAN_NOTIFY_SCRIPT_DEST"
 # Start fail2ban
-run_and_check "enable and start fail2ban service" systemctl -q enable --now fail2ban
+start_f2b() {
+    systemctl -q enable --now fail2ban.service
+    systemctl restart fail2ban.service
+}
+run_and_check "enable and start fail2ban service" start_f2b
 
 
 # server + user traffic telegram bot notify
@@ -232,6 +236,20 @@ EOF
     chmod 644 "/etc/cron.d/traffic_notify"
 }
 run_and_check "traffic notification script installation" tr_scr
+
+
+# user expiration notify
+EXP_NOTIFY_SCRIPT_SOURCE="script/exp_notify.sh"
+EXP_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/exp_notify.sh"
+exp_scr() {
+    set -e
+    install -m 700 -o root -g root "$EXP_NOTIFY_SCRIPT_SOURCE" "$EXP_NOTIFY_SCRIPT_DEST"
+    cat > /etc/cron.d/exp_notify << EOF
+10 1 * * * root "$EXP_NOTIFY_SCRIPT_DEST" &> /dev/null
+EOF
+    chmod 644 "/etc/cron.d/exp_notify"
+}
+run_and_check "expiration notification script installation" exp_scr
 
 
 # unattended upgrade and reboot script
@@ -265,7 +283,6 @@ run_and_check "security update script installation" un_up_scr
 BOOT_SCRIPT_SOURCE="script/boot_notify.sh"
 BOOT_SCRIPT_DEST="/usr/local/bin/telegram/boot_notify.sh"
 
-run_and_check "server boot notification script installation" 
 boot_scr() {
     set -e
     install -m 700 -o root -g root "$BOOT_SCRIPT_SOURCE" "$BOOT_SCRIPT_DEST"
@@ -286,7 +303,9 @@ EOF
     systemctl daemon-reload
     systemctl -q enable boot_notify.service
 }
-    
+
+run_and_check "server boot notification script installation" boot_scr
+
 
 # xray install
 # create user and add in ssh and sudo group
@@ -547,7 +566,22 @@ EOF
 run_and_check "xray and geo*.dat update script installation" xr_up_scr
 
 
-# done
+# maintance script
+USERADD_SCRIPT_SRC="script/useradd.sh"
+USERADD_SCRIPT_DEST="/usr/local/bin/service/useradd.sh"
+TEST_SCRIPT_SRC="script/test.sh"
+TEST_SCRIPT_DEST="/usr/local/bin/service/test.sh"
+
+# add link for maintance
+scr_service() {
+    set -e
+    ln -s "$USERADD_SCRIPT_DEST" "$USER_HOME/test_notify"
+    ln -s "$TEST_SCRIPT_DEST" "$USER_HOME/xray_user_add"
+    chown "$SECOND_USER:$USER_GROUP" "$USER_HOME/xray_user_add" "$USER_HOME/test_notify"
+}
+run_and_check "create link for service script" scr_service
+
+
 echo "#################################################"
 echo
 echo "################## PRIVATE KEY ##################"
