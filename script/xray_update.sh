@@ -1,4 +1,8 @@
 #!/bin/bash
+# auto install update (unattended-upgrade) and send notify via cron every first day month, 2:00 night time
+# all errors are logged, except the first three, for debugging, add a redirect to the debug log
+# 0 2 1 * * root /usr/local/bin/service/xray_update.sh &> /dev/null
+# exit codes work to tell Cron about success
 
 # root checking
 [[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
@@ -7,42 +11,44 @@
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
-# enable logging
+# enable logging, the directory should already be created, but let's check just in case
 readonly DATE="$(date +"%Y-%m-%d")"
-readonly UPDATE_LOG="/var/log/xray/xray_update.${DATE}.log"
-exec &>> "$UPDATE_LOG"
+readonly LOG_DIR="/var/log/xray"
+readonly UPDATE_LOG="${LOG_DIR}/xray_update.${DATE}.log"
+mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
+exec &>> "$UPDATE_LOG" || { echo "❌ Error: cannot write to log '$UPDATE_LOG', exit"; exit 1; }
 
 # start logging message
 readonly DATE_START="$(date "+%Y-%m-%d %H:%M:%S")"
 echo "   ########## xray update started - $DATE_START ##########   "
 
 # exit log message function
-exit_fail() {
+on_exit() {
     if [[ "$RC" = "0" ]]; then
-        echo "   ########## xray update ended - $DATE_END ##########   "
+        local date_end=$(date "+%Y-%m-%d %H:%M:%S")
+        echo "   ########## xray update ended - $date_end ##########   "
     else
-        DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "   ########## xray update failed - $DATE_FAIL ##########   "
+        local date_fail="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "   ########## xray update failed - $date_fail ##########   "
     fi
 }
 
 # error exit log message for end log
-trap 'exit_fail' EXIT
+trap 'on_exit' EXIT
 RC=1
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/var/run/geodat_update.lock"
+readonly LOCK_FILE="/var/run/xray_update.lock"
 exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
 flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 
 # main variables
-readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
 readonly ASSET_DIR="/usr/local/share/xray"
 readonly XRAY_DIR="/usr/local/bin"
 readonly GEOIP_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geoip.dat"
 readonly GEOSITE_URL="https://github.com/Loyalsoldier/v2ray-rules-dat/releases/latest/download/geosite.dat"
 readonly XRAY_URL="https://github.com/XTLS/xray-core/releases/latest/download/xray-linux-64.zip"
-readonly HOSTNAME=$(hostname)
+readonly HOSTNAME="$(hostname)"
 readonly MAX_ATTEMPTS=3
 STAGE="0"
 
@@ -58,7 +64,7 @@ cleanup_old_backups_and_logs() {
         local glob="${dir}/${pattern}"
 
         if ! compgen -G "$glob" > /dev/null; then
-            STATUS_OLD_BACKUP_DEL+="🟢 old ${name} missing, skipping deletion"$'\n'
+            STATUS_OLD_BACKUP_DEL+="⚫ old ${name} missing, skipping deletion"$'\n'
             return
         fi
 
@@ -69,27 +75,31 @@ cleanup_old_backups_and_logs() {
             echo "📢 Info: stage ${STAGE}, deleting old ${name} $f"
             if rm -f -- "$f"; then
                 echo "✅ Success: stage ${STAGE}, old ${name} $f deleted"
-                STATUS_OLD_BACKUP_DEL+="🟢 old ${name} deletion success"$'\n'
+                STATUS_OLD_BACKUP_DEL+="⚫ old ${name} deletion success"$'\n'
             else
                 echo "⚠️  Non-critical error: stage ${STAGE}, failed to delete old ${name} $f"
-                STATUS_OLD_BACKUP_DEL+="🟡 old ${name} deletion failed"$'\n'
+                STATUS_OLD_BACKUP_DEL+="⚠️ old ${name} deletion failed"$'\n'
                 FAIL_TD=1
             fi
         done
 
         if (( has_old == 0 )); then
-            STATUS_OLD_BACKUP_DEL+="🟢 old ${name} missing, skipping deletion"$'\n'
+            STATUS_OLD_BACKUP_DEL+="⚫ old ${name} missing, skipping deletion"$'\n'
         fi
     }
 
     cleanup_old "$XRAY_DIR"      "xray.*.bak"         "$XRAY_DIR/xray.${DATE}.bak"          "xray backup"
     cleanup_old "$ASSET_DIR"     "geoip.dat.*.bak"    "$ASSET_DIR/geoip.dat.${DATE}.bak"    "geoip.dat backup"
     cleanup_old "$ASSET_DIR"     "geosite.dat.*.bak"  "$ASSET_DIR/geosite.dat.${DATE}.bak"  "geosite.dat backup"
-    cleanup_old "/var/log/xray"  "xray_update.*.log"  "$UPDATE_LOG"                         "xray update log backup"
+    cleanup_old "$LOG_DIR"       "xray_update.*.log"  "$LOG_DIR/xray_update.${DATE}.log"    "xray update log backup"
 }
 
 # check secret file
-[[ ! -r "$ENV_FILE" ]] && { echo "❌ Error: env file $ENV_FILE not found or not readable, exit"; exit 1; }
+readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
+if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -L -c '%U:%a' "$ENV_FILE")" != "root:600" ]]; then
+    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
+    exit 1
+fi
 source "$ENV_FILE"
 
 # check token from secret file
@@ -100,18 +110,18 @@ source "$ENV_FILE"
 
 # pure telegram message function with checking the sending status
 _tg_m() {
-    local respond
-    respond="$(curl -fsS -m 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    local response
+    response="$(curl -fsS -m 10 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
         --data-urlencode "chat_id=${CHAT_ID}" \
+        --data-urlencode "parse_mode=HTML" \
         --data-urlencode "text=${MESSAGE}")" || return 1
-    echo "$respond" | grep -q '"ok":true' || return 1
+    grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' <<< "$response" || return 1
+    return 0
 }
 
-# telegram message with logging and retry
+# Telegram message with logging and retry
 telegram_message() {
-# reset attempt for next while
     local attempt=1
-# call telegram post function
     while true; do
         if ! _tg_m; then
             if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
@@ -120,11 +130,11 @@ telegram_message() {
                 return 1
             fi
             sleep 60
-            attempt=$((attempt + 1))
+            ((attempt++))
             continue
         else
             echo "✅ Success: message was sent to telegram after $attempt attempts"
-            break
+            return 0
         fi
     done
 }
@@ -141,7 +151,7 @@ exit_cleanup() {
         echo "❌ Error: temporary directory $TMP_DIR was not deleted"
         local date_del_error=$(date "+%Y-%m-%d %H:%M:%S")
         echo "########## cleanup failed - $date_del_error ##########"
-        MESSAGE="❌ Cleanup after Xray update
+        MESSAGE="❌ Cleanup after xray update
 🖥️  Host: $HOSTNAME
 ⌚ Time error: $date_del_error
 ❌ Error: temporary directory $TMP_DIR for xray update was not deleted"
@@ -156,7 +166,7 @@ TMP_DIR="$(mktemp -d)" || { echo "❌ Error: failed to create temporary director
 readonly TMP_DIR
 
 # rewrite trap exit, now error exit log message for end log and cleanup temp directory
-trap 'exit_fail; exit_cleanup' EXIT
+trap 'on_exit; exit_cleanup' EXIT
 
 # download function
 _dl() { curl -fsSL --max-time 60 "$1" -o "$2"; }
@@ -164,7 +174,7 @@ _dl() { curl -fsSL --max-time 60 "$1" -o "$2"; }
 _dl_with_retry() {
     local url="$1"
     local outfile="$2"
-    local label="$3"  # что пишем в логах (name, name.dgst, name.sha256sum)
+    local label="$3"
     local attempt=1
 
     while true; do
@@ -173,8 +183,8 @@ _dl_with_retry() {
                 echo "❌ Error: stage ${STAGE}, failed to download ${label} after ${attempt} attempts, exit"
                 return 1
             fi
-            sleep 10
-            attempt=$((attempt + 1))
+            sleep 60
+            ((attempt++))
             continue
         else
             echo "✅ Success: stage ${STAGE}, successful download ${label} after ${attempt} attempts"
@@ -439,9 +449,9 @@ cleanup_old_backups_and_logs
 # update xray
 if ! download_and_verify "$XRAY_URL" "$TMP_DIR/xray-linux-64.zip" "xray"; then
     XRAY_DOWNLOAD=0
-    STATUS_XRAY_MESSAGE="🔴 xray download failed"
+    STATUS_XRAY_MESSAGE="❌ xray download failed"
 else
-    STATUS_XRAY_MESSAGE="🟢 xray binary download success"
+    STATUS_XRAY_MESSAGE="⚫ xray binary download success"
     XRAY_DOWNLOAD=1
 fi
 
@@ -449,86 +459,86 @@ fi
 if [ "$XRAY_DOWNLOAD" = "1" ]; then
     if ! download_and_verify "$GEOIP_URL" "$TMP_DIR/geoip.dat" "geoip.dat"; then
         GEOIP_DOWNLOAD=0
-        STATUS_GEOIP_MESSAGE="🔴 geoip.dat download failed"
+        STATUS_GEOIP_MESSAGE="❌ geoip.dat download failed"
     else
-        STATUS_GEOIP_MESSAGE="🟢 xray geoip.dat download success"
+        STATUS_GEOIP_MESSAGE="⚫ xray geoip.dat download success"
         GEOIP_DOWNLOAD=1
     fi
 else
     GEOIP_DOWNLOAD=0
-    STATUS_GEOIP_MESSAGE="🟢 geoip.dat download skip"
+    STATUS_GEOIP_MESSAGE="⚠️ geoip.dat download skip"
 fi
 
 # update geosite if geoip success
 if [ "$XRAY_DOWNLOAD" = "1" ] && [ "$GEOIP_DOWNLOAD" = "1" ]; then
     if ! download_and_verify "$GEOSITE_URL" "$TMP_DIR/geosite.dat" "geosite.dat"; then
         GEOSITE_DOWNLOAD=0
-        STATUS_GEOSITE_MESSAGE="🔴 geosite.dat download failed"
+        STATUS_GEOSITE_MESSAGE="❌ geosite.dat download failed"
     else
-        STATUS_GEOSITE_MESSAGE="🟢 xray geosite.dat download success"
+        STATUS_GEOSITE_MESSAGE="⚫ xray geosite.dat download success"
         GEOSITE_DOWNLOAD=1
     fi
 else
     GEOSITE_DOWNLOAD=0
-    STATUS_GEOSITE_MESSAGE="🟢 geosite.dat download skip"
+    STATUS_GEOSITE_MESSAGE="⚠️ geosite.dat download skip"
 fi
 
 if [ "$XRAY_DOWNLOAD" = "1" ] && [ "$GEOIP_DOWNLOAD" = "1" ] && [ "$GEOSITE_DOWNLOAD" = "1" ]; then
     if ! install_xray; then
-        STATUS_INSTALL_MESSAGE="🔴 xray and geo*.dat install failed"
+        STATUS_INSTALL_MESSAGE="❌ xray and geo*.dat install failed"
         XRAY_INSTALL=0
     else
         if [ "$XRAY_UP_TO_DATE" = "1" ]; then
-            STATUS_INSTALL_MESSAGE="🟢 geo*.dat install success"$'\n'
-            STATUS_INSTALL_MESSAGE+="🟢 xray already up to date $XRAY_OLD_VER"
+            STATUS_INSTALL_MESSAGE="⚫ geo*.dat install success"$'\n'
+            STATUS_INSTALL_MESSAGE+="⚫ xray already up to date $XRAY_OLD_VER"
             XRAY_INSTALL=1
         else
-            STATUS_INSTALL_MESSAGE="🟢 xray and geo*.dat install success"$'\n'
-            STATUS_INSTALL_MESSAGE+="🟢 xray updated from $XRAY_OLD_VER to $XRAY_NEW_VER"
+            STATUS_INSTALL_MESSAGE="⚫ xray and geo*.dat install success"$'\n'
+            STATUS_INSTALL_MESSAGE+="⚫ xray updated from $XRAY_OLD_VER to $XRAY_NEW_VER"
             XRAY_INSTALL=1
         fi
     fi
 else
     XRAY_INSTALL=0
-    STATUS_INSTALL_MESSAGE="🟢 xray and geo*.dat install skip"
+    STATUS_INSTALL_MESSAGE="⚠️ xray and geo*.dat install skip"
 fi
 
 # check final xray status
 if systemctl is-active --quiet xray.service; then
-    STATUS_XRAY="🟢 Success: xray.service is running"
+    STATUS_XRAY="⚫ Success: xray.service is running"
 else
-    STATUS_XRAY="🔴 Critical Error: xray.service does not start"
+    STATUS_XRAY="❌ Critical Error: xray.service does not start"
 fi
 
-readonly DATE_END=$(date "+%Y-%m-%d %H:%M:%S")
+DATE_END=$(date "+%Y-%m-%d %H:%M:%S")
 
 # select a title for the telegram message
 if [ "$XRAY_DOWNLOAD" = "1" ] && [ "$GEOIP_DOWNLOAD" = "1" ] && [ "$GEOSITE_DOWNLOAD" = "1" ] && [ "$XRAY_INSTALL" = "1" ]; then
     if [ "$FAIL_TD" = "0" ]; then
-        MESSAGE_TITLE="✅ Xray Upgrade report"
+        MESSAGE_TITLE="<b>✅ Xray update report</b>"
         RC=0
     else
-        MESSAGE_TITLE="⚠️ Xray Upgrade report"
+        MESSAGE_TITLE="<b>⚠️ Xray update report</b>"
         RC=0
     fi
 else
-    MESSAGE_TITLE="❌ Xray Upgrade error"
+    MESSAGE_TITLE="<b>❌ Xray update error</b>"
     RC=1
 fi
 
 # collecting report for telegram message
 MESSAGE="$MESSAGE_TITLE
 
-🖥️  Host: $HOSTNAME
-⌚ Time start: $DATE_START
-⌚ Time end: $DATE_END
+🖥️ <b>Host:</b> $HOSTNAME
+⌚ <b>Time start:</b> $DATE_START
+⌚ <b>Time end:</b> $DATE_END
 ${STATUS_OLD_BACKUP_DEL}
 ${STATUS_XRAY_MESSAGE}
 ${STATUS_GEOIP_MESSAGE}
 ${STATUS_GEOSITE_MESSAGE}
 ${STATUS_INSTALL_MESSAGE}
 ${STATUS_XRAY}
-💾 Logfile: ${UPDATE_LOG}"
+💾 <b>Logfile:</b> ${UPDATE_LOG}"
 
 telegram_message
 

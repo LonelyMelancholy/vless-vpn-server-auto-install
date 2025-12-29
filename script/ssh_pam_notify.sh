@@ -20,23 +20,23 @@ export PATH
 # enable logging, the directory should already be created, but let's check just in case
 readonly DATE_LOG="$(date +"%Y-%m-%d")"
 readonly LOG_DIR="/var/log/telegram"
-readonly NOTIFY_LOG="${LOG_DIR}/ssh.${DATE_LOG}.log"
+readonly NOTIFY_LOG="${LOG_DIR}/ssh_pam.${DATE_LOG}.log"
 mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$NOTIFY_LOG" || { echo "❌ Error: cannot write to log '$NOTIFY_LOG', exit"; exit 1; }
 
 # start logging message
 readonly DATE_START="$(date "+%Y-%m-%d %H:%M:%S")"
-echo "########## ssh notify started - $DATE_START ##########"
+echo "########## ssh pam notify started - $DATE_START ##########"
 
 # exit logging message function
 RC="1"
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
         local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## ssh notify ended - $DATE_END ##########"
+        echo "########## ssh pam notify ended - $DATE_END ##########"
     else
         local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## ssh notify failed - $DATE_FAIL ##########"
+        echo "########## ssh pam notify failed - $DATE_FAIL ##########"
     fi
 }
 

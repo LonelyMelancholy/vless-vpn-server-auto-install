@@ -22,7 +22,7 @@ else
 fi
 
 # check another instance of the script is not running
-readonly LOCK_FILE="/var/run/pred-install.lock"
+readonly LOCK_FILE="/var/run/vpn_pred-install.lock"
 exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
 flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 

@@ -68,12 +68,12 @@ CFG_CHECK="module/cfg_check.sh"
 source "$CFG_CHECK"
 
 
-# tg bot settings
+# settings for Telegram notify script
 # write token and ID in secrets file
 ENV_PATH="/usr/local/etc/telegram/"
 ENV_FILE="/usr/local/etc/telegram/secrets.env"
 
-setup_tg_secret() {
+install_tg_secret() {
     set -e
     mkdir -p $ENV_PATH
     cat > $ENV_FILE << EOF
@@ -82,15 +82,14 @@ CHAT_ID="$READ_CHAT_ID"
 EOF
     chmod 600 "$ENV_FILE"
 }
-
-run_and_check "create secret file with token and ID for telegram scripts" setup_tg_secret
+run_and_check "install secret file with token and ID for Telegram scripts" install_tg_secret
 
 
 # user settings
 # create ssh group for login
 SSH_GROUP="ssh-users"
 if ! getent group "$SSH_GROUP" &> /dev/null; then
-    run_and_check "adding SSH group" addgroup "$SSH_GROUP"
+    run_and_check "creating SSH group" addgroup "$SSH_GROUP"
 else 
     echo "✅ Success: group $SSH_GROUP already exists"
 fi
@@ -104,17 +103,16 @@ else
 fi
 
 # changing password for root and user
-pswd_conf() {
+conf_pswd() {
     set -e
     printf 'root:%s\n%s:%s\n' "$PASS" "$SECOND_USER" "$PASS" | chpasswd
 }
 
-run_and_check "root and $SECOND_USER passwords change" pswd_conf
+run_and_check "changing root and $SECOND_USER passwords" conf_pswd
 
 
 # SSH Configuration
 # variables and port generation
-
 SSH_CONF_SOURCE="cfg/ssh.cfg"
 SSH_CONF_DEST="/etc/ssh/sshd_config.d/99-custom_security.conf"
 LOW="40000"
@@ -123,13 +121,13 @@ PORT="$(shuf -i "${LOW}-${HIGH}" -n 1)"
 
 # deleting previous sshd configuration with high priority
 if compgen -G "/etc/ssh/sshd_config.d/99*.conf" &> /dev/null; then
-    run_and_check "deleting previous conflicting sshd configuration files" rm -f /etc/ssh/sshd_config.d/99*.conf
+    run_and_check "deleting previous sshd configuration files" rm -f /etc/ssh/sshd_config.d/99*.conf
 else
-    echo "✅ Success: conflicting sshd configurations files not found"
+    echo "✅ Success: previous sshd configurations files not found"
 fi
 
 # creating a new sshd configuration
-setup_sshd() {
+install_sshd() {
     set -e
     install -m 644 -o root -g root "$SSH_CONF_SOURCE" "$SSH_CONF_DEST"
     sed -i "s/{PORT}/$PORT/g" "$SSH_CONF_DEST"
@@ -138,7 +136,7 @@ setup_sshd() {
     rm -f /etc/ssh/ssh_host_rsa_key
     rm -f /etc/ssh/ssh_host_rsa_key.pub
 }
-run_and_check "install new sshd configuration" setup_sshd
+run_and_check "install new sshd configuration" install_sshd
 
 # found second user home directory
 USER_HOME="$(getent passwd "$SECOND_USER" | cut -d: -f6)"
@@ -149,7 +147,7 @@ PUB_KEY_PATH="${PRIV_KEY_PATH}.pub"
 USER_GROUP="$(id -gn "$SECOND_USER")"
 
 # key generation for ssh
-setup_sshd_key() {
+install_sshd_key() {
     set -e
     mkdir -p "$SSH_DIR"
     ssh-keygen -t ed25519 -N "" -f "$PRIV_KEY_PATH" -q
@@ -159,7 +157,8 @@ setup_sshd_key() {
     chmod 600 "$PUB_KEY_PATH"
     chown -R "$SECOND_USER:$USER_GROUP" "$SSH_DIR"
 }
-run_and_check "install sshd keys" setup_sshd_key
+run_and_check "install new sshd keys" install_sshd_key
+
 
 # reboot SSH
 run_and_check "reload systemd" systemctl daemon-reload
@@ -168,33 +167,30 @@ run_and_check "restart sshd" systemctl restart ssh.socket
 
 # Install ssh login/logout notify and disable MOTD
 # install log directory
-setup_tg_dir() {
+install_tg_dir() {
     set -e
     mkdir -p /var/log/telegram
     mkdir -p /usr/local/bin/telegram
     mkdir -p /usr/local/bin/service
 }
 
-run_and_check "creating directory for all telegram script and log" setup_tg_dir
+run_and_check "creating directory for all telegram script and log" install_tg_dir
 
-# install script
-SSH_ENTER_NOTIFY_SCRIPT_SOURCE=script/ssh_enter_notify.sh
-SSH_ENTER_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_enter_notify.sh"
-run_and_check "ssh login notification script installation" install -m 700 -o root -g root "$SSH_ENTER_NOTIFY_SCRIPT_SOURCE" "$SSH_ENTER_NOTIFY_SCRIPT_DEST"
-
-# enable script in PAM
-enable_scr_pam() {
+# install ssh pam script and enable script in PAM
+SSH_PAM_NOTIFY_SCRIPT_SOURCE=script/ssh_pam_notify.sh
+SSH_PAM_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_pam_notify.sh"
+install_scr_ssh_pam() {
     set -e
-    if ! grep -q "ssh-telegram-notify" "/etc/pam.d/sshd"; then
+    install -m 700 -o root -g root "$SSH_PAM_NOTIFY_SCRIPT_SOURCE" "$SSH_PAM_NOTIFY_SCRIPT_DEST"
+    if ! grep -q "ssh-pam-telegram-notify" "/etc/pam.d/sshd"; then
         cat >> /etc/pam.d/sshd << EOF
-# ssh-telegram-notify
+# ssh-pam-telegram-notify
 # Notify for success ssh login and logout via telegram bot
-session optional pam_exec.so seteuid $SSH_ENTER_NOTIFY_SCRIPT_DEST
+session optional pam_exec.so seteuid $SSH_PAM_NOTIFY_SCRIPT_DEST
 EOF
     fi
 }
-
-run_and_check "enable login notification script in PAM setting" enable_scr_pam
+run_and_check "ssh PAM notification script installation" install_scr_ssh_pam
 
 # Disable message of the day
 MOTD="/etc/pam.d/sshd"
@@ -207,18 +203,18 @@ F2B_CONF_SOURCE="cfg/jail.local"
 F2B_CONF_DEST="/etc/fail2ban/jail.local"
 TG_LOCAL_SOURCE="cfg/ssh_telegram.local"
 TG_LOCAL_DEST="/etc/fail2ban/action.d/ssh_telegram.local"
-f2b_setup() {
+conf_f2b() {
     set -e
     install -m 644 -o root -g root "$F2B_CONF_SOURCE" "$F2B_CONF_DEST"
     sed -i "s/{PORT}/$PORT/g" "$F2B_CONF_DEST"
     install -m 644 -o root -g root "$TG_LOCAL_SOURCE" "$TG_LOCAL_DEST"
 }
-run_and_check "install fail2ban configuration" f2b_setup
+run_and_check "install fail2ban configuration" conf_f2b
 
 # Install ssh ban notify script
-SSH_BAN_NOTIFY_SCRIPT_SOURCE="script/ssh_ban_notify.sh"
-SSH_BAN_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_ban_notify.sh"
-run_and_check "telegram notification ban/unban script install" install -m 700 -o root -g root "$SSH_BAN_NOTIFY_SCRIPT_SOURCE" "$SSH_BAN_NOTIFY_SCRIPT_DEST"
+SSH_F2B_NOTIFY_SCRIPT_SOURCE="script/ssh_f2b_notify.sh"
+SSH_F2B_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_f2b_notify.sh"
+run_and_check "ssh f2b notification script installation" install -m 700 -o root -g root "$SSH_F2B_NOTIFY_SCRIPT_SOURCE" "$SSH_F2B_NOTIFY_SCRIPT_DEST"
 # Start fail2ban
 start_f2b() {
     systemctl -q enable --now fail2ban.service
@@ -227,10 +223,10 @@ start_f2b() {
 run_and_check "enable and start fail2ban service" start_f2b
 
 
-# user, server traffic + user exp date telegram bot notify
+# user, server traffic + user exp date Telegram bot notify
 USER_NOTIFY_SCRIPT_SOURCE="script/user_notify.sh"
 USER_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/user_notify.sh"
-tr_scr() {
+install_scr_user() {
     set -e
     install -m 700 -o root -g root "$USER_NOTIFY_SCRIPT_SOURCE" "$USER_NOTIFY_SCRIPT_DEST"
     cat > /etc/cron.d/user_notify << EOF
@@ -238,13 +234,13 @@ tr_scr() {
 EOF
     chmod 644 "/etc/cron.d/user_notify"
 }
-run_and_check "user daily report script installation" tr_scr
+run_and_check "user daily report script installation" install_scr_user
 
 
 # unattended upgrade and reboot script
 install_with_retry "install unattended upgrades package" apt-get install -y unattended-upgrades
 
-un_up_setup() {
+conf_un_up() {
     set -e
     cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
 APT::Periodic::Update-Package-Lists "0";
@@ -252,7 +248,7 @@ APT::Periodic::Unattended-Upgrade "0";
 EOF
     systemctl disable --now apt-daily.timer apt-daily-upgrade.timer
 }
-run_and_check "changing unattended upgrades settings" un_up_setup
+run_and_check "changing unattended upgrades settings" conf_un_up
 
 UNATTENDED_UPGRADE_SCRIPT_SOURCE="script/unattended_upgrade.sh"
 UNATTENDED_UPGRADE_SCRIPT_DEST="/usr/local/bin/service/unattended_upgrade.sh"
@@ -260,7 +256,6 @@ un_up_scr() {
     set -e
     install -m 700 -o root -g root "$UNATTENDED_UPGRADE_SCRIPT_SOURCE" "$UNATTENDED_UPGRADE_SCRIPT_DEST"
     cat > /etc/cron.d/unattended-upgrade << EOF
-SHELL=/bin/bash
 0 3 1 * * root "$UNATTENDED_UPGRADE_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/unattended-upgrade"
@@ -272,7 +267,7 @@ run_and_check "security update script installation" un_up_scr
 BOOT_SCRIPT_SOURCE="script/boot_notify.sh"
 BOOT_SCRIPT_DEST="/usr/local/bin/telegram/boot_notify.sh"
 
-boot_scr() {
+install_scr_boot() {
     set -e
     install -m 700 -o root -g root "$BOOT_SCRIPT_SOURCE" "$BOOT_SCRIPT_DEST"
     cat > /etc/systemd/system/boot_notify.service << EOF
@@ -293,7 +288,7 @@ EOF
     systemctl -q enable boot_notify.service
 }
 
-run_and_check "server boot notification script installation" boot_scr
+run_and_check "server boot notification script installation" install_scr_boot
 
 
 # xray install
@@ -303,7 +298,7 @@ if ! getent shadow xray &> /dev/null; then
 else 
     echo "✅ Success: user $SECOND_USER already exists"
 fi
-cr_xray_dir() {
+install_xray_dir() {
     set -e
     mkdir -p /usr/local/share/xray
     mkdir -p /usr/local/etc/xray
@@ -312,7 +307,7 @@ cr_xray_dir() {
     TMP_DIR="$(mktemp -d)"
     readonly TMP_DIR
 }
-run_and_check "create directory for the xray service" cr_xray_dir
+run_and_check "create directory for the xray service" install_xray_dir
 
 # download function
 _dl() { curl -fsSL --max-time 60 "$1" -o "$2"; }
@@ -463,8 +458,7 @@ run_and_check "install geosite.dat" install -m 644 -o root -g root $TMP_DIR/geos
 XRAY_CONFIG_SRC="cfg/config.json"
 XRAY_CONFIG_DEST="/usr/local/etc/xray/config.json"
 
-
-xray_ser() {
+conf_xray() {
     set -e
     cat > /etc/systemd/system/xray.service << EOF
 [Unit]
@@ -488,7 +482,7 @@ LimitNOFILE=1000000
 WantedBy=multi-user.target
 EOF
 }
-run_and_check "create xray systemd service" xray_ser
+run_and_check "create xray systemd service" conf_xray
 
 # configure json 
 XRAY_PORT="443"
@@ -528,6 +522,7 @@ trap 'rm -rf "$TMP_XRAY_CONFIG" "$TMP_DIR"' EXIT
 run_and_check "xray config checking" sudo -u xray xray run -test -config "$TMP_XRAY_CONFIG"
 run_and_check "install xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG_DEST"
 run_and_check "delete temporary xray files " rm -rf "$TMP_XRAY_CONFIG" "$TMP_DIR"
+trap - EXIT
 
 # Запускаем сервер
 run_and_check "reload systemd" systemctl daemon-reload
@@ -537,20 +532,18 @@ run_and_check "start xray service" systemctl start xray.service
 
 # done
 # auto update xray and geobase
-GEODAT_SCRIPT_SOURCE="script/geodat_update.sh"
-GEODAT_SCRIPT_DEST="/usr/local/bin/service/geodat_update.sh"
+XRAY_SCRIPT_SOURCE="script/xray_update.sh"
+XRAY_SCRIPT_DEST="/usr/local/bin/service/xray_update.sh"
 
-
-xr_up_scr() {
+install_scr_xr_up() {
     set -e
-    install -m 700 -o root -g root "$GEODAT_SCRIPT_SOURCE" "$GEODAT_SCRIPT_DEST"
-    cat > /etc/cron.d/geodat_update << EOF
-SHELL=/bin/bash
-0 2 1 * * root "$GEODAT_SCRIPT_DEST" &> /dev/null
+    install -m 700 -o root -g root "$XRAY_SCRIPT_SOURCE" "$XRAY_SCRIPT_DEST"
+    cat > /etc/cron.d/xray_update << EOF
+0 2 1 * * root "$XRAY_SCRIPT_DEST" &> /dev/null
 EOF
-    chmod 644 "/etc/cron.d/geodat_update"
+    chmod 644 "/etc/cron.d/xray_update"
 }
-run_and_check "xray and geo*.dat update script installation" xr_up_scr
+run_and_check "xray and geo*.dat update script installation" install_scr_xr_up
 
 
 # maintance script
@@ -563,7 +556,7 @@ TEST_SCRIPT_DEST="/usr/local/bin/service/test.sh"
 URI_PATH=/usr/local/etc/xray/uri
 
 # add link for maintance
-scr_service() {
+install_scr_service() {
     set -e
     install -m 700 -o root -g root "$USERADD_SCRIPT_SRC" "$USERADD_SCRIPT_DEST"
     install -m 700 -o root -g root "$USERDEL_SCRIPT_SRC" "$USERDEL_SCRIPT_DEST"
@@ -576,7 +569,7 @@ scr_service() {
     ln -s "$URI_PATH" "$USER_HOME/URI"
     chown "$SECOND_USER:$USER_GROUP" "$USER_HOME/xray_user_add" "$USER_HOME/xray_user_del" "$USER_HOME/test_notify"
 }
-run_and_check "create link for service script" scr_service
+run_and_check "install service script and create link in home directory" install_scr_service
 
 
 # add user for xray

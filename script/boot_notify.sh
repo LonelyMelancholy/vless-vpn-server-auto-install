@@ -16,23 +16,23 @@ sleep 60
 # enable logging, the directory should already be created, but let's check just in case
 readonly DATE_LOG="$(date +"%Y-%m-%d")"
 readonly LOG_DIR="/var/log/telegram"
-readonly NOTIFY_LOG="${LOG_DIR}/reboot.${DATE_LOG}.log"
+readonly NOTIFY_LOG="${LOG_DIR}/boot.${DATE_LOG}.log"
 mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$NOTIFY_LOG" || { echo "❌ Error: cannot write to log '$NOTIFY_LOG', exit"; exit 1; }
 
 # start logging message
 readonly DATE_START="$(date "+%Y-%m-%d %H:%M:%S")"
-echo "########## reboot notify started - $DATE_START ##########"
+echo "########## boot notify started - $DATE_START ##########"
 
 # exit logging message function
 RC="1"
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
         local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## reboot notify ended - $DATE_END ##########"
+        echo "########## boot notify ended - $DATE_END ##########"
     else
         local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## reboot notify failed - $DATE_FAIL ##########"
+        echo "########## boot notify failed - $DATE_FAIL ##########"
     fi
 }
 
@@ -40,7 +40,7 @@ on_exit() {
 trap 'on_exit' EXIT
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/var/run/reboot_notify.lock"
+readonly LOCK_FILE="/var/run/boot_notify.lock"
 exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
 flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 
@@ -126,22 +126,38 @@ readonly DATE_MESSAGE="$(date '+%Y-%m-%d %H:%M:%S')"
 # collecting title
 if [[  "$SSH_STATUS" ==  "running" && "$CRON_STATUS" == "running" && "$FAIL2BAN_STATUS" == "running" && "$XRAY_STATUS" == "running" && "$SYSTEM_STATUS" == "running" ]]; then
 TITLE="✅ <b>Server up, all services are running</b>"
+SYSTEM_STATUS="⚫️ <b>Init system:</b> $SYSTEM_STATUS"
 elif [[ "$SSH_STATUS" ==  "running" && "$CRON_STATUS" == "running" && "$FAIL2BAN_STATUS" == "running" && "$XRAY_STATUS" == "running" ]]; then
 TITLE="⚠️ <b>Server up, non-critical service down</b>"
+SYSTEM_STATUS="⚠️ <b>Init system:</b> $SYSTEM_STATUS"
 else 
 TITLE="❌ <b>Server up, critical service down</b>"
+SYSTEM_STATUS="❌ <b>Init system:</b> $SYSTEM_STATUS"
 fi
+
+# helper func for make status
+make_status() {
+    if [[  "$1" ==  "running" ]]; then
+        echo "⚫️ <b>${2}:</b> $1"
+    else
+        echo "❌ <b>${2}:</b> $1"
+    fi
+}
+SSH_STATUS="$(make_status "$SSH_STATUS" "Status ssh")"
+CRON_STATUS="$(make_status "$CRON_STATUS" "Status cron")"
+FAIL2BAN_STATUS="$(make_status "$FAIL2BAN_STATUS" "Status fail2ban")"
+XRAY_STATUS="$(make_status "$XRAY_STATUS" "Status xray")"
 
 # collecting message body
 MESSAGE="$TITLE
 
 🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
-⚫️ <b>Init system:</b> $SYSTEM_STATUS
-⚫️ <b>Status ssh:</b> $SSH_STATUS
-⚫️ <b>Status cron:</b> $CRON_STATUS
-⚫️ <b>Status fail2ban:</b> $FAIL2BAN_STATUS
-⚫️ <b>Status xray:</b> $XRAY_STATUS
+$SYSTEM_STATUS
+$SSH_STATUS
+$CRON_STATUS
+$FAIL2BAN_STATUS
+$XRAY_STATUS
 💾 <b>Notify log:</b> $NOTIFY_LOG"
 
 # logging message

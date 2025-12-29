@@ -1,7 +1,7 @@
 #!/bin/bash
 # script for notify xray traffic and user exp date via cron every day 1:00 night time
 # all errors are logged, except the first three, for debugging, add a redirect to the debug log
-# 0 1 * * * /usr/local/bin/telegram/user_notify.sh &> /dev/null
+# 0 1 * * * root /usr/local/bin/telegram/user_notify.sh &> /dev/null
 # exit codes work to tell Cron about success
 
 # export path just in case
@@ -44,6 +44,11 @@ readonly XRAY="/usr/local/bin/xray"
 readonly APISERVER="127.0.0.1:8080"
 readonly HOSTNAME="$(hostname)"
 readonly MAX_ATTEMPTS="3"
+
+# check another instanсe of the script is not running
+readonly LOCK_FILE="/var/run/user_notify.lock"
+exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 
 # pure Telegram message function with checking the sending status
 _tg_m() {

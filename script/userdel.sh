@@ -4,6 +4,11 @@
 # root check
 [[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
 
+# check another instanсe of the script is not running
+readonly LOCK_FILE="/var/run/userdel.lock"
+exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+
 # argument check
 if [[ "$#" -ne 1 ]]; then
     echo "Use for del user in xray config, run: $0 <username>"

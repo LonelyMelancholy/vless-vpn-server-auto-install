@@ -1,10 +1,8 @@
 #!/bin/bash
-# auto install update (unattended-upgrade) and send notify via Telegram
-# launch from crontab
-# 0 2 * * * root "$UNATTENDED_UPGRADE_SCRIPT_DEST" &> /dev/null
-# for debugging, add a redirect to the debug log
-# done work
-# done test
+# auto install update (unattended-upgrade) and send notify via cron every first day month, 3:00 night time
+# all errors are logged, except the first three, for debugging, add a redirect to the debug log
+# 0 3 1 * * root /usr/local/bin/service/unattended_upgrade.sh &> /dev/null
+# exit codes work to tell Cron about success
 
 # root check
 [[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
@@ -63,7 +61,7 @@ telegram_message() {
     while true; do
         if ! _tg_m; then
             if [[ "$attempt" -ge "$MAX_ATTEMPTS" ]]; then
-                echo "❌ Error: failed to send Telegram message after $attempt attempt, exit"
+                echo "❌ Error: failed to send Telegram message after $attempt attempts, exit"
                 return 1
             fi
             sleep 60
