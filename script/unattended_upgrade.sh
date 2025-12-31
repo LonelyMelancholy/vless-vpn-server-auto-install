@@ -140,7 +140,7 @@ check_fail() {
 
 🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
-❌ <b>Action:</b> updgrade failed"
+❌ <b>Action:</b> updgrade failed
 ❌ <b>Step:</b> ${FAIL_STEP}
 💾 <b>UN-UP log:</b> /var/log/unattended-upgrades/unattended-upgrades.log
 💾 <b>Upgrade log:</b> ${UPGRADE_LOG}
@@ -190,7 +190,7 @@ MESSAGE="<b>✅ Scheduled security updates</b>
 
 🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
-⚫️ <b>Action:</b> upgrade success"
+⚫️ <b>Action:</b> upgrade success
 $CHANGE_SUMMARY
 💾 <b>UN-UP log:</b> /var/log/unattended-upgrades/unattended-upgrades.log
 💾 <b>Upgrade log:</b> ${UPGRADE_LOG}

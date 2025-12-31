@@ -49,7 +49,7 @@ client_count="$(
   ' "$XRAY_CONFIG"
 )"
 
-if [[ $client_count -gt 1 ]]; then
+if [[ $client_count -ge 1 ]]; then
     echo "❌ Error: name already exist in xray config, exit"
     exit 1
 fi

@@ -231,6 +231,7 @@ install_scr_user() {
     set -e
     install -m 700 -o root -g root "$USER_NOTIFY_SCRIPT_SOURCE" "$USER_NOTIFY_SCRIPT_DEST"
     cat > /etc/cron.d/user_notify << EOF
+SHELL=/bin/bash
 1 1 * * * root "$USER_NOTIFY_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/user_notify"
@@ -245,6 +246,7 @@ install_scr_autoban() {
     set -e
     install -m 700 -o root -g root "$AUTOBAN_SCRIPT_SOURCE" "$AUTOBAN_SCRIPT_DEST"
     cat > /etc/cron.d/autoban << EOF
+SHELL=/bin/bash
 1 0 * * * root "$AUTOBAN_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/autoban"
@@ -270,6 +272,7 @@ un_up_scr() {
     set -e
     install -m 700 -o root -g root "$UNATTENDED_UPGRADE_SCRIPT_SOURCE" "$UNATTENDED_UPGRADE_SCRIPT_DEST"
     cat > /etc/cron.d/unattended-upgrade << EOF
+SHELL=/bin/bash
 1 3 1 * * root "$UNATTENDED_UPGRADE_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/unattended-upgrade"
@@ -310,7 +313,7 @@ run_and_check "server boot notification script installation" install_scr_boot
 if ! getent shadow xray &> /dev/null; then
     run_and_check "create user for the xray service" useradd -r -M -d /nonexistent -s /usr/sbin/nologin xray
 else 
-    echo "✅ Success: user $SECOND_USER already exists"
+    echo "✅ Success: user 'xray' already exists"
 fi
 install_xray_dir() {
     set -e
@@ -552,6 +555,7 @@ install_scr_xr_up() {
     set -e
     install -m 700 -o root -g root "$XRAY_SCRIPT_SOURCE" "$XRAY_SCRIPT_DEST"
     cat > /etc/cron.d/xray_update << EOF
+SHELL=/bin/bash
 1 2 1 * * root "$XRAY_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/xray_update"
@@ -567,6 +571,7 @@ install_scr_user_stat() {
     set -e
     install -m 700 -o root -g root "$USERSTAT_SCRIPT_SRC" "$USERSTAT_SCRIPT_DEST"
     cat > /etc/cron.d/userstat << EOF
+SHELL=/bin/bash
 0 * * * * root "$USERSTAT_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/userstat"

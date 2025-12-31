@@ -110,7 +110,7 @@ RESET_ARG=""
 readonly RAW="$(cat "/var/log/xray/TR_DB")"
 
 # reset traffic 1 day of month
-if [[ $RESET_ARG="1" ]]; then
+if [[ $RESET_ARG == "1" ]]; then
     rm -f "/var/log/xray/TR_DB"
 fi
 
