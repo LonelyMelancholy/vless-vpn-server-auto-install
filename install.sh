@@ -170,7 +170,7 @@ run_and_check "restart sshd" systemctl restart ssh.socket
 install_tg_dir() {
     set -e
     mkdir -p /var/log/telegram
-    mkdit -p /var/log/service
+    mkdir -p /var/log/service
     mkdir -p /usr/local/bin/telegram
     mkdir -p /usr/local/bin/service
 }
