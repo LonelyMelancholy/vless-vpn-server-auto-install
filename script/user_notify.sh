@@ -1,7 +1,7 @@
 #!/bin/bash
-# script for notify xray traffic and user exp date via cron every day 1:00 night time
+# script for notify xray traffic and user exp date via cron every day 1:01 night time
 # all errors are logged, except the first three, for debugging, add a redirect to the debug log
-# 0 1 * * * root /usr/local/bin/telegram/user_notify.sh &> /dev/null
+# 1 1 * * * root /usr/local/bin/telegram/user_notify.sh &> /dev/null
 # exit codes work to tell Cron about success
 
 # export path just in case
@@ -104,10 +104,15 @@ source "$ENV_FILE"
 
 # reset traffic 1 day of month
 RESET_ARG=""
-[[ "$(date +%d)" = "01" ]] && RESET_ARG="--reset"
+[[ "$(date +%d)" = "01" ]] && RESET_ARG="1"
 
 # get stat json
-readonly RAW="$("$XRAY" api statsquery --server="$APISERVER" $RESET_ARG 2>/dev/null)"
+readonly RAW="$(cat "/var/log/xray/TR_DB")"
+
+# reset traffic 1 day of month
+if [[ $RESET_ARG="1" ]]; then
+    rm -f "/var/log/xray/TR_DB"
+fi
 
 # parse json to name:name:number
 stat_lines() {
@@ -187,9 +192,7 @@ MESSAGE+=$'\n'"🔚 <b>Time:</b>"
 
 while IFS=$' ' read -r EMAIL DAYS; do
     [[ -z "$EMAIL" ]] && continue
-    if [[ $DAYS -lt 0 ]]; then
-        MESSAGE+=$'\n'"❌ <b>User time:</b> $EMAIL - $DAYS days left"
-    elif [[ $DAYS -lt 10 ]]; then
+    if [[ $DAYS -lt 10 ]]; then
         MESSAGE+=$'\n'"⚠️ <b>User time:</b> $EMAIL - $DAYS days left"
     else
         MESSAGE+=$'\n'"🔚 <b>User time:</b> $EMAIL - $DAYS days left"

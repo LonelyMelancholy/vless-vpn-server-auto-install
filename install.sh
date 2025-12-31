@@ -170,6 +170,7 @@ run_and_check "restart sshd" systemctl restart ssh.socket
 install_tg_dir() {
     set -e
     mkdir -p /var/log/telegram
+    mkdit -p /var/log/service
     mkdir -p /usr/local/bin/telegram
     mkdir -p /usr/local/bin/service
 }
@@ -230,12 +231,25 @@ install_scr_user() {
     set -e
     install -m 700 -o root -g root "$USER_NOTIFY_SCRIPT_SOURCE" "$USER_NOTIFY_SCRIPT_DEST"
     cat > /etc/cron.d/user_notify << EOF
-0 1 * * * root "$USER_NOTIFY_SCRIPT_DEST" &> /dev/null
+1 1 * * * root "$USER_NOTIFY_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/user_notify"
 }
 run_and_check "user daily report script installation" install_scr_user
 
+
+# autoban exp users + Telegram bot notify
+AUTOBAN_SCRIPT_SOURCE="script/autoban.sh"
+AUTOBAN_SCRIPT_DEST="/usr/local/bin/service/autoban.sh"
+install_scr_autoban() {
+    set -e
+    install -m 700 -o root -g root "$AUTOBAN_SCRIPT_SOURCE" "$AUTOBAN_SCRIPT_DEST"
+    cat > /etc/cron.d/autoban << EOF
+1 0 * * * root "$AUTOBAN_SCRIPT_DEST" &> /dev/null
+EOF
+    chmod 644 "/etc/cron.d/autoban"
+}
+run_and_check "autoban exp user script installation" install_scr_autoban
 
 # unattended upgrade and reboot script
 install_with_retry "install unattended upgrades package" apt-get install -y unattended-upgrades
@@ -256,7 +270,7 @@ un_up_scr() {
     set -e
     install -m 700 -o root -g root "$UNATTENDED_UPGRADE_SCRIPT_SOURCE" "$UNATTENDED_UPGRADE_SCRIPT_DEST"
     cat > /etc/cron.d/unattended-upgrade << EOF
-0 3 1 * * root "$UNATTENDED_UPGRADE_SCRIPT_DEST" &> /dev/null
+1 3 1 * * root "$UNATTENDED_UPGRADE_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/unattended-upgrade"
 }
@@ -530,7 +544,6 @@ run_and_check "enable autostart xray service" systemctl -q enable xray.service
 run_and_check "start xray service" systemctl start xray.service
 
 
-# done
 # auto update xray and geobase
 XRAY_SCRIPT_SOURCE="script/xray_update.sh"
 XRAY_SCRIPT_DEST="/usr/local/bin/service/xray_update.sh"
@@ -539,11 +552,26 @@ install_scr_xr_up() {
     set -e
     install -m 700 -o root -g root "$XRAY_SCRIPT_SOURCE" "$XRAY_SCRIPT_DEST"
     cat > /etc/cron.d/xray_update << EOF
-0 2 1 * * root "$XRAY_SCRIPT_DEST" &> /dev/null
+1 2 1 * * root "$XRAY_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/xray_update"
 }
 run_and_check "xray and geo*.dat update script installation" install_scr_xr_up
+
+
+# user stat DB
+USERSTAT_SCRIPT_SRC="script/userstat.sh"
+USERSTAT_SCRIPT_DEST="/usr/local/bin/service/userstat.sh"
+
+install_scr_user_stat() {
+    set -e
+    install -m 700 -o root -g root "$USERSTAT_SCRIPT_SRC" "$USERSTAT_SCRIPT_DEST"
+    cat > /etc/cron.d/userstat << EOF
+0 * * * * root "$USERSTAT_SCRIPT_DEST" &> /dev/null
+EOF
+    chmod 644 "/etc/cron.d/userstat"
+}
+run_and_check "userstat script installation" install_scr_user_stat
 
 
 # maintance script
@@ -551,9 +579,17 @@ USERADD_SCRIPT_SRC="script/useradd.sh"
 USERADD_SCRIPT_DEST="/usr/local/bin/service/useradd.sh"
 USERDEL_SCRIPT_SRC="script/userdel.sh"
 USERDEL_SCRIPT_DEST="/usr/local/bin/service/userdel.sh"
+USEREXP_SCRIPT_SRC="script/userexp.sh"
+USEREXP_SCRIPT_DEST="/usr/local/bin/service/userexp.sh"
+
+ #скрипты .юзеров
+# USERSHOW_SCRIPT_SRC=
+
+# и еще бан надо доделать
+
 TEST_SCRIPT_SRC="script/test.sh"
 TEST_SCRIPT_DEST="/usr/local/bin/service/test.sh"
-URI_PATH=/usr/local/etc/xray/uri
+URI_PATH="/usr/local/etc/xray/URI_DB"
 
 # add link for maintance
 install_scr_service() {
@@ -561,13 +597,18 @@ install_scr_service() {
     install -m 700 -o root -g root "$USERADD_SCRIPT_SRC" "$USERADD_SCRIPT_DEST"
     install -m 700 -o root -g root "$USERDEL_SCRIPT_SRC" "$USERDEL_SCRIPT_DEST"
     install -m 700 -o root -g root "$TEST_SCRIPT_SRC" "$TEST_SCRIPT_DEST"
+    install -m 700 -o root -g root "$USEREXP_SCRIPT_SRC" "$USEREXP_SCRIPT_DEST"
     touch $URI_PATH
     chmod 600 $URI_PATH
     ln -s "$USERADD_SCRIPT_DEST" "$USER_HOME/xray_user_add"
+    ln -s "$USEREXP_SCRIPT_DEST" "$USER_HOME/xray_user_exp"
     ln -s "$USERDEL_SCRIPT_DEST" "$USER_HOME/xray_user_del"
+
+ # скрипты .юзеров
+
     ln -s "$TEST_SCRIPT_DEST" "$USER_HOME/test_notify"
-    ln -s "$URI_PATH" "$USER_HOME/URI"
-    chown "$SECOND_USER:$USER_GROUP" "$USER_HOME/xray_user_add" "$USER_HOME/xray_user_del" "$USER_HOME/test_notify"
+
+    chown "$SECOND_USER:$USER_GROUP" "$USER_HOME/xray_user_add" "$USER_HOME/xray_user_del" "$USER_HOME/xray_user_exp" "$USER_HOME/test_notify"
 }
 run_and_check "install service script and create link in home directory" install_scr_service
 

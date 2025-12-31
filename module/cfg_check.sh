@@ -17,7 +17,7 @@ fi
 if [[ "$SECOND_USER" =~ ^[A-Za-z_][A-Za-z0-9_-]{0,31}$ ]]; then
     echo "✅ Success: server administrator username accepted"
 else
-    echo "❌ Error: username '$SECOND_USER' does not comply with Linux rules, exit"
+    echo "❌ Error: 'Server administrator username' '$SECOND_USER' does not comply with Linux rules, exit"
     exit 1
 fi
 
@@ -68,7 +68,12 @@ fi
 # check name
 XRAY_NAME=$(awk -F'"' '/^[[:space:]]*Name/ {print $2}' "$CFG_FILE")
 if [[ -z "$XRAY_NAME" ]]; then
-    echo "❌ Error: 'Name' is empty in '$CFG_FILE', exit"
+    echo "❌ Error: 'Name' for xrayis empty in '$CFG_FILE', exit"
+    exit 1
+fi
+
+if [[ ! $XRAY_NAME =~ ^[A-Za-z0-9-]+$ ]]; then
+    echo "❌ Error: 'Name' for xray can have only letters, numbers and - in name, exit"
     exit 1
 else
     echo "✅ Success: name for xray accepted"

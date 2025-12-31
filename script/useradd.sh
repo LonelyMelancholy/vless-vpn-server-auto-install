@@ -10,14 +10,14 @@ exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', e
 flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 
 # main variables
-readonly URI_PATH="/usr/local/etc/xray/uri"
+readonly URI_PATH="/usr/local/etc/xray/URI_DB"
 readonly XRAY_CONFIG="/usr/local/etc/xray/config.json"
 readonly XRAY_BIN="/usr/local/bin/xray"
 readonly INBOUND_TAG="Vless"
 readonly DEFAULT_FLOW="xtls-rprx-vision"
 readonly USERNAME="$1"
-readonly DAYS="$2"
 readonly FRESH_INSTALL="${3:-0}"
+DAYS="$2"
 umask 022
 
 # argument check
@@ -33,6 +33,27 @@ if [[ "$#" -lt 2 ]]; then
     exit 1
 fi
 
+if ! [[ $USERNAME =~ ^[A-Za-z0-9-]+$ ]]; then
+    echo "❌ Error: only letters, numbers and - in name, exit"
+    exit 1
+fi
+
+# counts client in config
+client_count="$(
+  jq -r --arg tag "$INBOUND_TAG" --arg name "$USERNAME" '
+    [
+      .inbounds[]? | select(.tag == $tag) |
+      .settings.clients[]? |
+      select(((.email // "") | split("|")[0]) == $name)
+    ] | length
+  ' "$XRAY_CONFIG"
+)"
+
+if [[ $client_count -gt 1 ]]; then
+    echo "❌ Error: name already exist in xray config, exit"
+    exit 1
+fi
+
 if ! [[ "$DAYS" =~ ^[0-9]+$ ]]; then
     echo "❌ Error: days must be non negative number, exit"
     exit 1
@@ -44,7 +65,7 @@ if ! [[ "$FRESH_INSTALL" =~ ^[0-1]$ ]]; then
 fi
 
 # config check
-if [[ ! -r "$XRAY_CONFIG" ]]; then
+if [[ ! -r "$XRAY_CONFIG" || ! -w "$XRAY_CONFIG" ]]; then
     echo "❌ Error: check $XRAY_CONFIG it's missing or you do not have read permissions, exit"
     exit 1
 fi
@@ -93,12 +114,16 @@ else
     exit 1
 fi
 
-# add user
-readonly TMP_XRAY_CONFIG="$(mktemp)"
-readonly JSON_XRAY_CONFIG="${TMP_XRAY_CONFIG}.json"
-touch "$JSON_XRAY_CONFIG"
-
 xray_useradd() {
+    set -e
+
+    # make tmp file
+    TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
+
+    # set trap for deleting tmp files
+    trap 'rm -f "$TMP_XRAY_CONFIG"' EXIT
+    
+    # add user
     jq --arg tag "$INBOUND_TAG" \
         --arg email "$XRAY_EMAIL" \
         --arg id "$UUID" \
@@ -114,17 +139,17 @@ xray_useradd() {
             else .
             end
         ))
-    ' "$XRAY_CONFIG" > "$JSON_XRAY_CONFIG"
+    ' "$XRAY_CONFIG" > "$TMP_XRAY_CONFIG"
 }
-
-# set trap for deleting tmp files
-trap 'rm -f "$TMP_XRAY_CONFIG" "$JSON_XRAY_CONFIG"' EXIT
 
 # add user, check config, install if config valid and delete tmp files
 run_and_check "add xray user" xray_useradd
-run_and_check "xray config checking" sudo -u xray xray run -test -config "$JSON_XRAY_CONFIG"
-run_and_check "install xray config" install -m 600 -o xray -g xray "$JSON_XRAY_CONFIG" "$XRAY_CONFIG"
-run_and_check "delete temporary xray files " rm -f "$TMP_XRAY_CONFIG" "$JSON_XRAY_CONFIG"
+run_and_check "check new xray config" sudo -u xray xray run -test -config "$TMP_XRAY_CONFIG"
+run_and_check "install new xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "delete temporary xray files " rm -f "$TMP_XRAY_CONFIG"
+
+# unset trap, tmp already deleted
+trap - EXIT
 
 # restart xray for enable user
 run_and_check "restart xray service" systemctl restart xray.service

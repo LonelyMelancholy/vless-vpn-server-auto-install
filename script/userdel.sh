@@ -21,22 +21,25 @@ readonly XRAY_BIN="/usr/local/bin/xray"
 readonly INBOUND_TAG="Vless"
 readonly ARG_RAW="$1"
 readonly USERNAME="${ARG_RAW%%|*}"
-readonly URI_PATH="/usr/local/etc/xray/uri"
+readonly URI_PATH="/usr/local/etc/xray/URI_DB"
 readonly BACKUP_PATH="${XRAY_CONFIG}.$(date +%Y%m%d_%H%M%S).bak"
-readonly TMP_XRAY_CONFIG="$(mktemp)"
-readonly TMP_JSON_XRAY_CONFIG="${TMP_XRAY_CONFIG}.json"
 readonly URI_BAK="${URI_PATH}.$(date +%Y%m%d_%H%M%S).bak"
 
 # config check
-if [[ ! -r "$XRAY_CONFIG" ]]; then
+if [[ ! -r "$XRAY_CONFIG" || ! -w "$XRAY_CONFIG" ]]; then
     echo "❌ Error: check $XRAY_CONFIG it's missing or you do not have read permissions, exit"
     exit 1
 fi
 
 # username check after parsing
 if [[ -z "$USERNAME" ]]; then
-  echo "❌ Error: empty username after parsing input."
-  exit 4
+    echo "❌ Error: empty username after parsing input, exit"
+    exit 1
+fi
+
+if [[ ! $USERNAME =~ ^[A-Za-z0-9-]+$ ]]; then
+    echo "❌ Error: only letters, numbers and - in name, exit"
+    exit 1
 fi
 
 # function error helper
@@ -64,15 +67,21 @@ readonly COUNT_FILTER='[
 readonly BEFORE="$(jq -r --arg t "$USERNAME" --arg tag "$INBOUND_TAG" "$COUNT_FILTER" "$XRAY_CONFIG")"
 
 if [[ "$BEFORE" -eq 0 ]]; then
-  echo "❌ Error: no matches found for: '$USERNAME' in inbound tag \"Vless\". Nothing to do."
-  exit 0
+    echo "❌ Error: no matches found for: '$USERNAME' in inbound tag \"Vless\". Nothing to do."
+    exit 1
 fi
 
 xray_userdel() {
+    set -e
     # backup
     cp -a "$XRAY_CONFIG" "$BACKUP_PATH"
-    # create tmp conf
-    touch "$TMP_JSON_XRAY_CONFIG"
+    
+    # make tmp file
+    readonly TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
+
+    # set trap for tmp file
+    trap 'rm -f "$TMP_XRAY_CONFIG" "$TMP_URI"' EXIT
+
     # delete user and add to tmp conf
     jq --arg t "$USERNAME" --arg tag "$INBOUND_TAG" '
         def base_email: split("|")[0];
@@ -83,22 +92,19 @@ xray_userdel() {
             .
             end
         )
-    ' "$XRAY_CONFIG" > "$TMP_JSON_XRAY_CONFIG"
+    ' "$XRAY_CONFIG" > "$TMP_XRAY_CONFIG"
 
     # count numbers match users after
-    AFTER="$(jq -r --arg t "$USERNAME" --arg tag "$INBOUND_TAG" "$COUNT_FILTER" "$TMP_JSON_XRAY_CONFIG")"
+    AFTER="$(jq -r --arg t "$USERNAME" --arg tag "$INBOUND_TAG" "$COUNT_FILTER" "$TMP_XRAY_CONFIG")"
 
     # count how many users were deleted
     REMOVED=$((BEFORE - AFTER))
 }
 
-# set trap for deleting tmp files
-trap 'rm -f "$TMP_XRAY_CONFIG" "$JSON_XRAY_CONFIG"' EXIT
-
 # del user, check config, install if config valid and delete tmp files, restart xray
 run_and_check "delete xray user" xray_userdel
-run_and_check "xray config checking" sudo -u xray xray run -test -config "$TMP_JSON_XRAY_CONFIG"
-run_and_check "install new xray config" install -m 600 -o xray -g xray "$TMP_JSON_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "xray config checking" sudo -u xray xray run -test -config "$TMP_XRAY_CONFIG"
+run_and_check "install new xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
 run_and_check "restart xray service" systemctl restart xray.service
 
 # echo result
@@ -111,16 +117,16 @@ if [[ "$REMOVED" -gt 0 && -f "$URI_PATH" ]]; then
         # backup
         cp -a "$URI_PATH" "$URI_BAK"
 
-        # make tmp uri
-        TMP_URI="$(mktemp)"
-        
-        # rewrite trap for new tmp file
-        trap 'rm -f "$TMP_XRAY_CONFIG" "$JSON_XRAY_CONFIG" "$TMP_URI"' EXIT
+        # create tmp file
+        readonly TMP_URI="$(mktemp)"
+
+        # set trap for tmp file
+        trap 'rm -f "$TMP_XRAY_CONFIG" "$TMP_URI"' EXIT
 
         # paste in tmp file without username
         awk -v t="$USERNAME" '
             BEGIN { skipping=0 }
-            $0 ~ ("^name:[ \t]*" t "([ \t].*|$)") {
+            $0 ~ ("^name:[ \t]*" t "([ \t,].*|$)") {
                 skipping=1
                 next
             }
@@ -132,12 +138,12 @@ if [[ "$REMOVED" -gt 0 && -f "$URI_PATH" ]]; then
         ' "$URI_PATH" > "$TMP_URI"
 
         # write from tmp to uri
-        cat "$TMP_URI" > "$URI_PATH"
+        install -m 600 -o root -g root "$TMP_URI" "$URI_PATH"
     }
 
-    run_and_check "clear user from URI" uri_userdel
+    run_and_check "clear user from URI database" uri_userdel
 
-    echo "✅ Success: removed $REMOVED client(s) for '$USERNAME' from URI"
+    echo "✅ Success: removed $REMOVED client(s) for '$USERNAME' from URI database"
     echo "✅ Success: Backup saved $URI_BAK"
 fi
 

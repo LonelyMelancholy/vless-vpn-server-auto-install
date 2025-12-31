@@ -1,7 +1,7 @@
 #!/bin/bash
-# auto install update (unattended-upgrade) and send notify via cron every first day month, 2:00 night time
+# auto install xray update and send notify via cron every first day month, 2:01 night time
 # all errors are logged, except the first three, for debugging, add a redirect to the debug log
-# 0 2 1 * * root /usr/local/bin/service/xray_update.sh &> /dev/null
+# 1 2 1 * * root /usr/local/bin/service/xray_update.sh &> /dev/null
 # exit codes work to tell Cron about success
 
 # root checking
@@ -13,7 +13,7 @@ export PATH
 
 # enable logging, the directory should already be created, but let's check just in case
 readonly DATE="$(date +"%Y-%m-%d")"
-readonly LOG_DIR="/var/log/xray"
+readonly LOG_DIR="/var/log/service"
 readonly UPDATE_LOG="${LOG_DIR}/xray_update.${DATE}.log"
 mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$UPDATE_LOG" || { echo "❌ Error: cannot write to log '$UPDATE_LOG', exit"; exit 1; }
@@ -126,7 +126,6 @@ telegram_message() {
         if ! _tg_m; then
             if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
                 echo "❌ Error: failed to send telegram message after $attempt attempts, exit"
-                RC=1
                 return 1
             fi
             sleep 60
@@ -151,10 +150,10 @@ exit_cleanup() {
         echo "❌ Error: temporary directory $TMP_DIR was not deleted"
         local date_del_error=$(date "+%Y-%m-%d %H:%M:%S")
         echo "########## cleanup failed - $date_del_error ##########"
-        MESSAGE="❌ Cleanup after xray update
-🖥️  Host: $HOSTNAME
-⌚ Time error: $date_del_error
-❌ Error: temporary directory $TMP_DIR for xray update was not deleted"
+        MESSAGE="❌ <b>Scheduled cleanup after xray update</b>
+🖥️ <b>Host:</b> $HOSTNAME
+⌚ <b>Time error:</b> $date_del_error
+❌ <b>Error:</b> temporary directory $TMP_DIR for xray update was not deleted"
         telegram_message
         trap - EXIT
         exit 1
@@ -515,14 +514,14 @@ DATE_END=$(date "+%Y-%m-%d %H:%M:%S")
 # select a title for the telegram message
 if [ "$XRAY_DOWNLOAD" = "1" ] && [ "$GEOIP_DOWNLOAD" = "1" ] && [ "$GEOSITE_DOWNLOAD" = "1" ] && [ "$XRAY_INSTALL" = "1" ]; then
     if [ "$FAIL_TD" = "0" ]; then
-        MESSAGE_TITLE="<b>✅ Xray update report</b>"
+        MESSAGE_TITLE="<b>✅ Scheduled xray update</b>"
         RC=0
     else
-        MESSAGE_TITLE="<b>⚠️ Xray update report</b>"
+        MESSAGE_TITLE="<b>⚠️ Scheduled xray update</b>"
         RC=0
     fi
 else
-    MESSAGE_TITLE="<b>❌ Xray update error</b>"
+    MESSAGE_TITLE="<b>❌ Scheduled xray update</b>"
     RC=1
 fi
 
@@ -538,7 +537,7 @@ ${STATUS_GEOIP_MESSAGE}
 ${STATUS_GEOSITE_MESSAGE}
 ${STATUS_INSTALL_MESSAGE}
 ${STATUS_XRAY}
-💾 <b>Logfile:</b> ${UPDATE_LOG}"
+💾 <b>Update log:</b> ${UPDATE_LOG}"
 
 telegram_message
 

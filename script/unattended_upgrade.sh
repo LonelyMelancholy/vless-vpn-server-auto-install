@@ -1,7 +1,7 @@
 #!/bin/bash
-# auto install update (unattended-upgrade) and send notify via cron every first day month, 3:00 night time
+# auto install upgrade (unattended-upgrade) and send notify via cron every first day month, 3:01 night time
 # all errors are logged, except the first three, for debugging, add a redirect to the debug log
-# 0 3 1 * * root /usr/local/bin/service/unattended_upgrade.sh &> /dev/null
+# 1 3 1 * * root /usr/local/bin/service/unattended_upgrade.sh &> /dev/null
 # exit codes work to tell Cron about success
 
 # root check
@@ -13,7 +13,7 @@ export PATH
 
 # enable logging, the directory should already be created, but let's check just in case
 readonly DATE_LOG="$(date +"%Y-%m-%d")"
-readonly LOG_DIR="/var/log/telegram"
+readonly LOG_DIR="/var/log/service"
 readonly UPGRADE_LOG="${LOG_DIR}/unattended-upgrade.${DATE_LOG}.log"
 mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$UPGRADE_LOG" || { echo "❌ Error: cannot write to log '$UPGRADE_LOG', exit"; exit 1; }
@@ -95,11 +95,11 @@ readonly TODAY="$(date +%Y-%m-%d)"
 
 # main logic start here
 DATE_MESSAGE="$(date '+%Y-%m-%d %H:%M:%S')"
-MESSAGE="⚠️ <b>Scheduled security updates</b>
+MESSAGE="⚠️ <b>Scheduled security upgrade</b>
 
 🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
-⚫️ <b>Action:</b> Update started"
+⚫️ <b>Action:</b> upgrade started"
 
 echo "########## collected message - $DATE_MESSAGE ##########"
 echo "$MESSAGE"
@@ -136,11 +136,12 @@ update_and_upgrade() {
 check_fail() {
     if [[ -n "${FAIL_STEP:-}" ]]; then
         DATE_MESSAGE="$(date '+%Y-%m-%d %H:%M:%S')"
-        MESSAGE="❌ <b>Error installing security updates</b>
+        MESSAGE="❌ <b>Scheduled security updates</b>
 
 🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
-⚫️ <b>Step:</b> ${FAIL_STEP}
+❌ <b>Action:</b> updgrade failed"
+❌ <b>Step:</b> ${FAIL_STEP}
 💾 <b>UN-UP log:</b> /var/log/unattended-upgrades/unattended-upgrades.log
 💾 <b>Upgrade log:</b> ${UPGRADE_LOG}
 💾 <b>Dpkg log:</b> /var/log/dpkg.log"
@@ -185,10 +186,11 @@ fi
 
 # start collecting final message
 DATE_MESSAGE="$(date '+%Y-%m-%d %H:%M:%S')"
-MESSAGE="<b>✅ Successful installation security updates</b>
+MESSAGE="<b>✅ Scheduled security updates</b>
 
 🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
+⚫️ <b>Action:</b> upgrade success"
 $CHANGE_SUMMARY
 💾 <b>UN-UP log:</b> /var/log/unattended-upgrades/unattended-upgrades.log
 💾 <b>Upgrade log:</b> ${UPGRADE_LOG}
@@ -203,11 +205,11 @@ if [[ -f /var/run/reboot-required ]]; then
     PKGS_REBOOT="$(cat /var/run/reboot-required.pkgs)"
     PKGS_REBOOT="$(printf '%s\n' "$PKGS_REBOOT" | sed 's/^/[→] /')"
     DATE_MESSAGE="$(date '+%Y-%m-%d %H:%M:%S')"
-    MESSAGE="⚠️ <b>Scheduled security updates</b>
+    MESSAGE="⚠️ <b>Scheduled security upgrade</b>
 
 🖥️ <b>Host:</b> $HOSTNAME
 ⌚ <b>Time:</b> $DATE_MESSAGE
-⚫️ <b>Action:</b> Reboot after 1 min
+⚫️ <b>Action:</b> reboot after 1 min
 🔎 <b>Reboot request from packages:</b>
 ${PKGS_REBOOT}"
 
