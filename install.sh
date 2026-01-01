@@ -594,14 +594,8 @@ USEREXP_SCRIPT_SRC="script/userexp.sh"
 USEREXP_SCRIPT_DEST="/usr/local/bin/service/userexp.sh"
 USERBLOCK_SCRIPT_SRC="script/userblock.sh"
 USERBLOCK_SCRIPT_DEST="/usr/local/bin/service/userblock.sh"
-
- #скрипты .юзеров
-# USERSHOW_SCRIPT_SRC=
-
-
-
-TEST_SCRIPT_SRC="script/test.sh"
-TEST_SCRIPT_DEST="/usr/local/bin/service/test.sh"
+USERSHOW_SCRIPT_SRC="script/usershow.sh"
+USERSHOW_SCRIPT_DEST="/usr/local/bin/service/usershow.sh"
 URI_PATH="/usr/local/etc/xray/URI_DB"
 
 # add link for maintance
@@ -611,22 +605,14 @@ install_scr_service() {
     install -m 700 -o root -g root "$USERDEL_SCRIPT_SRC" "$USERDEL_SCRIPT_DEST"
     install -m 700 -o root -g root "$USEREXP_SCRIPT_SRC" "$USEREXP_SCRIPT_DEST"
     install -m 700 -o root -g root "$USERBLOCK_SCRIPT_SRC" "$USERBLOCK_SCRIPT_DEST"
-
-# user script
-
-    install -m 700 -o root -g root "$TEST_SCRIPT_SRC" "$TEST_SCRIPT_DEST"
+    install -m 700 -o root -g root "$USERSHOW_SCRIPT_SRC" "$USERSHOW_SCRIPT_DEST"
     touch $URI_PATH
     chmod 600 $URI_PATH
     ln -sfn "$USERADD_SCRIPT_DEST" "$USER_HOME/xray_user_add"
     ln -sfn "$USERDEL_SCRIPT_DEST" "$USER_HOME/xray_user_del"
     ln -sfn "$USEREXP_SCRIPT_DEST" "$USER_HOME/xray_user_exp"
     ln -sfn "$USERBLOCK_SCRIPT_DEST" "$USER_HOME/xray_user_block"
-
- # скрипты .юзеров
-
-    ln -sfn "$TEST_SCRIPT_DEST" "$USER_HOME/test_notify"
-
-    chown "$SECOND_USER:$USER_GROUP" "$USER_HOME/xray_user_add" "$USER_HOME/xray_user_del" "$USER_HOME/xray_user_exp" "$USER_HOME/test_notify"
+    ln -sfn "$USERSHOW_SCRIPT_DEST" "$USER_HOME/xray_user_show"
 }
 run_and_check "install service script and create link in home directory" install_scr_service
 
