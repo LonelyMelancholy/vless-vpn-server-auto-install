@@ -148,9 +148,13 @@ parse_conf() {
     done
 
     # users JSON array
-    users_json="$(printf '%s\n' "${expired_emails[@]}" \
-        | jq -R . \
-        | jq -s 'unique')"
+    if (( ${#expired_emails[@]} == 0 )); then
+        users_json='[]'
+    else
+        users_json="$(printf '%s\n' "${expired_emails[@]}" \
+            | jq -R . \
+            | jq -s 'unique')"
+    fi
 }
 run_and_check "parse config for exp email" parse_conf
 

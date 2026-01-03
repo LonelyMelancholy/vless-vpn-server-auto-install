@@ -104,6 +104,13 @@ jq_common_preamble='
 # start block/unblock
 case "$ACTION" in
     block)
+        # check client only in our tagged rule
+        mapfile -t EMAILS < <(get_blocked_emails_from_rule)
+        if [[ ${#EMAILS[@]} -gt 0 ]]; then
+            echo "❌ Error: client for block name '$USERNAME' already blocked in ruleTag '$RULE_TAG'"
+            exit 1
+        fi
+
         # check client exist or not
         mapfile -t EMAILS < <(get_client_emails)
         if [[ ${#EMAILS[@]} -gt 0 ]]; then
@@ -178,16 +185,13 @@ case "$ACTION" in
 
             .routing.rules |= (
                 map(
-                if is_managed_rule then
+                    if is_managed_rule then
                     .user = ((.user // []) - $emails)
-                else .
-                end
-                )
-                | map(
-                    if is_managed_rule and ((.user // []) | length == 0) then empty else .
+                    else .
                     end
                 )
-            )
+                )
+                | del(.routing.rules[] | select(is_managed_rule and ((.user // []) | length == 0)))
             ' "$XRAY_CONFIG" > "$TMP_XRAY_CONFIG"
         }
         run_and_check "unblock user ${EMAILS[*]}, ruleTag '$RULE_TAG'" unblock_user

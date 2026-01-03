@@ -63,6 +63,15 @@ readonly COUNT_FILTER='[
   | select((.email | split("|")[0]) == $t)
 ] | length'
 
+# count blocked records in routing rules (only these 2 ruleTag)
+readonly BLOCK_COUNT_FILTER='[
+  .routing.rules[]?
+  | select(.ruleTag == "autoblock-expired-users" or .ruleTag == "manual-block-users")
+  | .user[]?
+  | select((split("|")[0]) == $t)
+] | length'
+readonly BLOCK_BEFORE="$(jq -r --arg t "$USERNAME" "$BLOCK_COUNT_FILTER" "$XRAY_CONFIG")"
+
 # count numbers match users before
 readonly BEFORE="$(jq -r --arg t "$USERNAME" --arg tag "$INBOUND_TAG" "$COUNT_FILTER" "$XRAY_CONFIG")"
 
@@ -83,23 +92,58 @@ xray_userdel() {
     # set trap for tmp file
     trap 'rm -f "$TMP_XRAY_CONFIG" "$TMP_URI"' EXIT
 
-    # delete user and add to tmp conf
+    # delete user and add to tmp conf (also clear from block rules)
     jq --arg t "$USERNAME" --arg tag "$INBOUND_TAG" '
-        def base_email: split("|")[0];
+        def base: split("|")[0];
+
+        # remove from inbound clients (by email base part before "|")
         .inbounds |= map(
             if (.tag == $tag) and (.settings? and .settings.clients?) then
-            .settings.clients |= map(select((.email | base_email) != $t))
+            .settings.clients |= map(select((.email | base) != $t))
             else
             .
             end
         )
-    ' "$XRAY_CONFIG" > "$TMP_XRAY_CONFIG"
+        |
+
+        # remove from routing block rules + drop rule if user[] becomes empty
+        (if (.routing? and .routing.rules?) then
+            .routing.rules |= (
+            map(
+                if ((.ruleTag? == "autoblock-expired-users") or (.ruleTag? == "manual-block-users"))
+                    and (.user? and (.user|type)=="array") then
+                .user |= map(select((. | base) != $t))
+                else
+                .
+                end
+            )
+
+            # drop empty block rules
+            | map(select(
+                if ((.ruleTag? == "autoblock-expired-users") or (.ruleTag? == "manual-block-users"))
+                    and (.user? and (.user|type)=="array") then
+                    (.user | length) > 0
+                else
+                    true
+                end
+                ))
+            )
+        else
+            .
+        end)
+        ' "$XRAY_CONFIG" > "$TMP_XRAY_CONFIG"
 
     # count numbers match users after
     AFTER="$(jq -r --arg t "$USERNAME" --arg tag "$INBOUND_TAG" "$COUNT_FILTER" "$TMP_XRAY_CONFIG")"
 
+    # count blocked records after
+    BLOCK_AFTER="$(jq -r --arg t "$USERNAME" "$BLOCK_COUNT_FILTER" "$TMP_XRAY_CONFIG")"
+
     # count how many users were deleted
     REMOVED=$((BEFORE - AFTER))
+
+    # count how many block entries were deleted
+    BLOCK_REMOVED=$((BLOCK_BEFORE - BLOCK_AFTER))
 }
 
 # del user, check config, install if config valid and delete tmp files, restart xray
@@ -111,6 +155,11 @@ run_and_check "restart xray service" systemctl restart xray.service
 # echo result
 echo "✅ Success: removed $REMOVED client(s) for '$USERNAME' from inbound tag '$INBOUND_TAG'"
 echo "✅ Success: Backup saved $BACKUP_PATH"
+if [[ "$BLOCK_REMOVED" -gt 0 ]]; then
+    echo "✅ Success: removed $BLOCK_REMOVED block record(s) for '$USERNAME' from routing rules (autoblock-expired-users/manual-block-users)"
+else
+    echo "✅ Success: block record for '$USERNAME' from routing rules (autoblock-expired-users/manual-block-users) not found"
+fi
 
 # if user removed need to remove user from uri file
 if [[ "$REMOVED" -gt 0 && -f "$URI_PATH" ]]; then

@@ -76,7 +76,7 @@ ENV_FILE="/usr/local/etc/telegram/secrets.env"
 install_tg_secret() {
     set -e
     mkdir -p "$ENV_PATH"
-    cat > "$ENV_FILE" << EOF
+    tee "$ENV_FILE" > /dev/null <<EOF
 BOT_TOKEN="$READ_BOT_TOKEN"
 CHAT_ID="$READ_CHAT_ID"
 EOF
@@ -184,7 +184,7 @@ install_scr_ssh_pam() {
     set -e
     install -m 700 -o root -g root "$SSH_PAM_NOTIFY_SCRIPT_SOURCE" "$SSH_PAM_NOTIFY_SCRIPT_DEST"
     if ! grep -q "ssh-pam-telegram-notify" "/etc/pam.d/sshd"; then
-        cat >> /etc/pam.d/sshd << EOF
+    tee -a /etc/pam.d/sshd > /dev/null <<EOF
 # ssh-pam-telegram-notify
 # Notify for success ssh login and logout via telegram bot
 session optional pam_exec.so seteuid $SSH_PAM_NOTIFY_SCRIPT_DEST
@@ -229,7 +229,7 @@ install_with_retry "install unattended upgrades package" apt-get install -y unat
 
 conf_un_up() {
     set -e
-    cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
+    tee /etc/apt/apt.conf.d/20auto-upgrades > /dev/null <<'EOF'
 APT::Periodic::Update-Package-Lists "0";
 APT::Periodic::Unattended-Upgrade "0";
 EOF
@@ -242,7 +242,7 @@ UNATTENDED_UPGRADE_SCRIPT_DEST="/usr/local/bin/service/unattended_upgrade.sh"
 un_up_scr() {
     set -e
     install -m 700 -o root -g root "$UNATTENDED_UPGRADE_SCRIPT_SOURCE" "$UNATTENDED_UPGRADE_SCRIPT_DEST"
-    cat > /etc/cron.d/unattended-upgrade << EOF
+    tee /etc/cron.d/unattended-upgrade > /dev/null <<EOF
 SHELL=/bin/bash
 1 3 1 * * root "$UNATTENDED_UPGRADE_SCRIPT_DEST" &> /dev/null
 EOF
@@ -258,7 +258,7 @@ BOOT_SCRIPT_DEST="/usr/local/bin/telegram/boot_notify.sh"
 install_scr_boot() {
     set -e
     install -m 700 -o root -g root "$BOOT_SCRIPT_SOURCE" "$BOOT_SCRIPT_DEST"
-    cat > /etc/systemd/system/boot_notify.service << EOF
+    tee /etc/systemd/system/boot_notify.service > /dev/null <<EOF
 [Unit]
 Description=Telegram notify after boot
 Wants=network-online.target
@@ -448,7 +448,7 @@ XRAY_CONFIG_DEST="/usr/local/etc/xray/config.json"
 
 conf_xray() {
     set -e
-    cat > /etc/systemd/system/xray.service << EOF
+    tee /etc/systemd/system/xray.service > /dev/null <<EOF
 [Unit]
 Description=Xray-core VLESS server
 After=network-online.target
@@ -530,7 +530,7 @@ XRAY_SCRIPT_DEST="/usr/local/bin/service/xray_update.sh"
 install_scr_xr_up() {
     set -e
     install -m 700 -o root -g root "$XRAY_SCRIPT_SOURCE" "$XRAY_SCRIPT_DEST"
-    cat > /etc/cron.d/xray_update << EOF
+    tee /etc/cron.d/xray_update > /dev/null <<EOF
 SHELL=/bin/bash
 1 2 1 * * root "$XRAY_SCRIPT_DEST" &> /dev/null
 EOF
@@ -546,9 +546,9 @@ USERSTAT_SCRIPT_DEST="/usr/local/bin/service/userstat.sh"
 install_scr_user_stat() {
     set -e
     install -m 700 -o root -g root "$USERSTAT_SCRIPT_SRC" "$USERSTAT_SCRIPT_DEST"
-    cat > /etc/cron.d/userstat << EOF
+    tee /etc/cron.d/userstat > /dev/null <<EOF
 SHELL=/bin/bash
-0 * * * * root "$USERSTAT_SCRIPT_DEST" &> /dev/null
+*/10 * * * * root "$USERSTAT_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/userstat"
 }
@@ -561,7 +561,7 @@ USER_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/user_notify.sh"
 install_scr_user() {
     set -e
     install -m 700 -o root -g root "$USER_NOTIFY_SCRIPT_SOURCE" "$USER_NOTIFY_SCRIPT_DEST"
-    cat > /etc/cron.d/user_notify << EOF
+    tee /etc/cron.d/user_notify > /dev/null << EOF
 SHELL=/bin/bash
 1 1 * * * root "$USER_NOTIFY_SCRIPT_DEST" &> /dev/null
 EOF
@@ -576,7 +576,7 @@ AUTOBLOCK_SCRIPT_DEST="/usr/local/bin/service/autoblock.sh"
 install_scr_autoblock() {
     set -e
     install -m 700 -o root -g root "$AUTOBLOCK_SCRIPT_SOURCE" "$AUTOBLOCK_SCRIPT_DEST"
-    cat > /etc/cron.d/autoblock << EOF
+    tee /etc/cron.d/autoblock > /dev/null <<EOF
 SHELL=/bin/bash
 1 0 * * * root "$AUTOBLOCK_SCRIPT_DEST" &> /dev/null
 EOF

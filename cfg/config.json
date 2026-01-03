@@ -6,20 +6,19 @@
     "dnsLog": false,
     "maskAddress": ""
   },
-
   "dns": {
     "servers": [
       "https+local://1.1.1.1/dns-query",
       "https+local://8.8.8.8/dns-query"
     ]
   },
-
   "api": {
     "tag": "api",
     "listen": "127.0.0.1:8080",
-    "services": ["StatsService"]
+    "services": [
+        "StatsService"
+    ]
   },
-
   "inbounds": [
     {
       "tag": "Vless",
@@ -37,8 +36,12 @@
         "realitySettings": {
           "dest": "",
           "privateKey": "",
-          "serverNames": [""],
-          "shortIds": [""],
+          "serverNames": [
+
+          ],
+          "shortIds": [
+
+          ],
           "show": false,
           "xver": 0
         },
@@ -51,29 +54,36 @@
       },
       "sniffing": {
         "enabled": true,
-        "destOverride": ["http", "tls", "quic"],
+        "destOverride": [
+            "http",
+            "tls",
+            "quic"
+        ],
         "metadataOnly": false,
         "routeOnly": true
       }
     }
   ],
-
   "routing": {
     "domainStrategy": "IPOnDemand",
     "rules": [
       {
         "type": "field",
         "outboundTag": "blocked",
-        "ip": ["geoip:private", "geoip:ru"]
+        "ip": [
+            "geoip:private",
+            "geoip:ru"
+        ]
       },
       {
         "type": "field",
         "outboundTag": "blocked",
-        "protocol": ["bittorrent"]
+        "protocol": [
+            "bittorrent"
+        ]
       }
     ]
   },
-
   "outbounds": [
     {
       "tag": "direct",
@@ -84,9 +94,7 @@
       "protocol": "blackhole"
     }
   ],
-
   "stats": {},
-
   "policy": {
     "levels": {
       "0": {
