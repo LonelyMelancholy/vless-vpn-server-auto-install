@@ -1,7 +1,7 @@
 #!/bin/bash
-# script for collecting xray traffic stat via cron every hour
+# script for collecting xray traffic stat via cron every 1m
 # all errors are logged, except the first three, for debugging, add a redirect to the debug log
-# 0 * * * * root /usr/local/bin/service/userstat.sh &> /dev/null
+# */1m * * * * root /usr/local/bin/service/userstat.sh &> /dev/null
 # exit codes work to tell Cron about success
 
 # export path just in case
@@ -17,6 +17,10 @@ readonly LOG_DIR="/var/log/service"
 readonly NOTIFY_LOG="${LOG_DIR}/userstat.${DATE_LOG}.log"
 mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$NOTIFY_LOG" || { echo "❌ Error: cannot write to log '$NOTIFY_LOG', exit"; exit 1; }
+
+# start logging message
+readonly DATE_START="$(date "+%Y-%m-%d %H:%M:%S")"
+echo "########## user stat started - $DATE_START ##########"
 
 # exit logging message function
 RC="1"
@@ -35,8 +39,8 @@ trap 'on_exit' EXIT
 
 # check another instanse of the script is not running
 readonly LOCK_FILE="/var/run/userstat.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 8 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 
 # helper func
 run_and_check() {

@@ -50,6 +50,28 @@ readonly LOCK_FILE="/var/run/user.lock"
 exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
 flock -n 9 || { echo "❌ Error: another instance working on xray configuration or URI DB, exit"; exit 1; }
 
+# check another instance is not running (with retries)
+readonly LOCK_FILE_2="/var/run/userstat.lock"
+
+exec 8> "$LOCK_FILE_2" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_2', exit"; exit 1; }
+
+wait_sec=10
+
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  if flock -n 8; then
+    # lock acquired; FD 8 stays open -> lock held until script exits
+    break
+  fi
+
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "❌ Error: Lock busy ($LOCK_FILE_2). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$wait_sec"
+  else
+    echo "❌ Error: lock is still busy after $MAX_ATTEMPTS attempts, exit"
+    exit 1
+  fi
+done
+
 # pure Telegram message function with checking the sending status
 _tg_m() {
     local response

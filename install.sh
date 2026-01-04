@@ -549,7 +549,7 @@ install_scr_user_stat() {
     install -m 700 -o root -g root "$USERSTAT_SCRIPT_SRC" "$USERSTAT_SCRIPT_DEST"
     tee /etc/cron.d/userstat > /dev/null <<EOF
 SHELL=/bin/bash
-*/10 * * * * root "$USERSTAT_SCRIPT_DEST" &> /dev/null
+*/1 * * * * root "$USERSTAT_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/userstat"
 }
