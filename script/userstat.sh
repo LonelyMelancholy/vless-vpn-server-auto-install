@@ -56,39 +56,51 @@ run_and_check() {
 }
 
 # main variable
-readonly OUT_FILE="/var/log/xray/TR_DB"
-tmp_new="$(mktemp)"
-tmp_old="$(mktemp)"
-tmp_out="$(mktemp)"
-trap 'on_exit; rm -f "$tmp_new" "$tmp_old" "$tmp_out";' EXIT
+readonly OUT_FILE_M="/var/log/xray/TR_DB_M"
+readonly OUT_FILE_Y="/var/log/xray/TR_DB_Y"
+TMP_NEW_COMMON="$(mktemp)"
+TMP_OLD_M="$(mktemp)"
+TMP_OLD_Y="$(mktemp)"
+TMP_OUT_M="$(mktemp)"
+TMP_OUT_Y="$(mktemp)"
+trap 'on_exit; rm -f "$TMP_NEW_COMMON" "$TMP_OLD_M" "$TMP_OLD_Y" "$TMP_OUT_M" "$TMP_OUT_Y";' EXIT
 
 # get stat and reset
 fresh_stat() {
-    xray api statsquery --reset > "$tmp_new"
+    xray api statsquery --reset > "$TMP_NEW_COMMON"
 }
 run_and_check "xray stat request and reset" fresh_stat
 
 # if empty start stat from 0
-if [[ ! -s "$tmp_new" ]]; then
-    printf '{"stat":[]}\n' > "$tmp_new"
+if [[ ! -s "$TMP_NEW_COMMON" ]]; then
+    printf '{"stat":[]}\n' > "$TMP_NEW_COMMON"
 fi
 
 # new JSON check valid, if not save and exit
-if ! jq -e . &> /dev/null < "$tmp_new"; then
+if ! jq -e . &> /dev/null < "$TMP_NEW_COMMON"; then
     ts="$(date +%Y%m%d-%H%M%S)"
-    cp -f "$tmp_new" "${OUT_FILE}.bad_new_${ts}.json"
-    echo "❌ Error: cannot parse xray new stats JSON; saved raw to ${OUT_FILE}.bad_new_${ts}.json"
+    cp -f "$TMP_NEW_COMMON" "${OUT_FILE_M}.bad_new_${ts}.json"
+    echo "❌ Error: cannot parse xray new stats JSON; saved raw to ${OUT_FILE_M}.bad_new_${ts}.json"
+    cp -f "$TMP_NEW_COMMON" "${OUT_FILE_Y}.bad_new_${ts}.json"
+    echo "❌ Error: cannot parse xray new stats JSON; saved raw to ${OUT_FILE_Y}.bad_new_${ts}.json"
     exit 1
 fi
 
-# if old empty or not valid, start stat from 0
-if [[ -s "$OUT_FILE" ]] && jq -e . &> /dev/null < "$OUT_FILE"; then
-  cp -f "$OUT_FILE" "$tmp_old"
+# if old M empty or not valid, start stat from 0
+if [[ -s "$OUT_FILE_M" ]] && jq -e . &> /dev/null < "$OUT_FILE_M"; then
+  cp -f "$OUT_FILE_M" "$TMP_OLD_M"
 else
-  printf '{"stat":[]}\n' >"$tmp_old"
+  printf '{"stat":[]}\n' >"$TMP_OLD_M"
 fi
 
-# merge old + new -> tmp_out
+# if old Y empty or not valid, start stat from 0
+if [[ -s "$OUT_FILE_Y" ]] && jq -e . &> /dev/null < "$OUT_FILE_Y"; then
+  cp -f "$OUT_FILE_Y" "$TMP_OLD_Y"
+else
+  printf '{"stat":[]}\n' >"$TMP_OLD_Y"
+fi
+
+# merge old + new -> TMP_OUT_*
 merge_old_new() {
     set -e
 jq -s '
@@ -126,12 +138,14 @@ jq -s '
         )
     )
   }
-' "$tmp_old" "$tmp_new" >"$tmp_out"
+' "$1" "$2" >"$3"
 }
 
-run_and_check "start merge tmp file" merge_old_new
+run_and_check "start merge tmp_m file" merge_old_new "$TMP_OLD_M" "$TMP_NEW_COMMON" "$TMP_OUT_M"
+run_and_check "start merge tmp_y file" merge_old_new "$TMP_OLD_Y" "$TMP_NEW_COMMON" "$TMP_OUT_Y"
 
 # install new TR_DB
-run_and_check "install new TR_DB file" install -m 644 -o root -g root "$tmp_out" "$OUT_FILE"
+run_and_check "install new TR_DB_M file" install -m 644 -o root -g root "$TMP_OUT_M" "$OUT_FILE_M"
+run_and_check "install new TR_DB_Y file" install -m 644 -o root -g root "$TMP_OUT_Y" "$OUT_FILE_Y"
 
 RC=0

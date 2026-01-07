@@ -225,6 +225,24 @@ start_f2b() {
 run_and_check "enable and start fail2ban service" start_f2b
 
 
+# turn on bbr
+aviable_bbr() {
+    sysctl net.ipv4.tcp_available_congestion_control | grep bbr &> /dev/null
+}
+bbr_on() {
+    tee /etc/sysctl.d/99-bbr.conf > /dev/null <<'EOF'
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+EOF
+    sysctl --system &> /dev/null
+}
+if aviable_bbr; then
+    run_and_check "enable bbr" bbr_on
+else
+    echo "❌ Error: bbr not activated"
+fi
+
+
 # unattended upgrade and reboot script
 install_with_retry "install unattended upgrades package" apt-get install -y unattended-upgrades
 
@@ -281,12 +299,13 @@ run_and_check "server boot notification script installation" install_scr_boot
 
 
 # xray install
-# create user and add in ssh and sudo group
+# create user for xray
 if ! getent shadow xray &> /dev/null; then
     run_and_check "create user for the xray service" useradd -r -M -d /nonexistent -s /usr/sbin/nologin xray
 else 
     echo "✅ Success: user 'xray' already exists"
 fi
+
 install_xray_dir() {
     set -e
     mkdir -p /usr/local/share/xray
@@ -453,6 +472,7 @@ conf_xray() {
 [Unit]
 Description=Xray-core VLESS server
 After=network-online.target
+Wants=network-online.target
 
 [Service]
 User=xray
@@ -549,7 +569,7 @@ install_scr_user_stat() {
     install -m 700 -o root -g root "$USERSTAT_SCRIPT_SRC" "$USERSTAT_SCRIPT_DEST"
     tee /etc/cron.d/userstat > /dev/null <<EOF
 SHELL=/bin/bash
-*/1 * * * * root "$USERSTAT_SCRIPT_DEST" &> /dev/null
+0 * * * * root "$USERSTAT_SCRIPT_DEST" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/userstat"
 }
@@ -597,6 +617,8 @@ USERBLOCK_SCRIPT_SRC="script/userblock.sh"
 USERBLOCK_SCRIPT_DEST="/usr/local/bin/service/userblock.sh"
 USERSHOW_SCRIPT_SRC="script/usershow.sh"
 USERSHOW_SCRIPT_DEST="/usr/local/bin/service/usershow.sh"
+SYS_INFO_SCRIPT_SRC="script/system_info.sh"
+SYS_INFO_SCRIPT_DEST="/usr/local/bin/service/system_info.sh"
 URI_PATH="/usr/local/etc/xray/URI_DB"
 
 # add link for maintance
@@ -607,6 +629,7 @@ install_scr_service() {
     install -m 700 -o root -g root "$USEREXP_SCRIPT_SRC" "$USEREXP_SCRIPT_DEST"
     install -m 700 -o root -g root "$USERBLOCK_SCRIPT_SRC" "$USERBLOCK_SCRIPT_DEST"
     install -m 700 -o root -g root "$USERSHOW_SCRIPT_SRC" "$USERSHOW_SCRIPT_DEST"
+    install -m 700 -o root -g root "$SYS_INFO_SCRIPT_SRC" "$SYS_INFO_SCRIPT_DEST"
     touch $URI_PATH
     chmod 600 $URI_PATH
     ln -sfn "$USERADD_SCRIPT_DEST" "$USER_HOME/xray_user_add"
@@ -614,9 +637,80 @@ install_scr_service() {
     ln -sfn "$USEREXP_SCRIPT_DEST" "$USER_HOME/xray_user_exp"
     ln -sfn "$USERBLOCK_SCRIPT_DEST" "$USER_HOME/xray_user_block"
     ln -sfn "$USERSHOW_SCRIPT_DEST" "$USER_HOME/xray_user_show"
+
     find "$USER_HOME" -type l -exec chown -h $SECOND_USER:$SECOND_USER {} +
 }
 run_and_check "install service script and create link in home directory" install_scr_service
+
+
+# Telegram gateway script
+TG_GATEWAY_SCRIPT_SRC="script/tg_gateway.sh"
+TG_GATEWAY_SCRIPT_DEST="/usr/local/bin/service/tg_gateway.sh"
+
+# create user for tg_gateway
+if ! getent shadow tg_gw &> /dev/null; then
+    run_and_check "create user for the Telegram gateway" useradd -r -M -d /nonexistent -s /usr/sbin/nologin tg_gw
+else
+    echo "✅ Success: user 'tg_gw' already exists"
+fi
+
+# /etc/systemd/system/tg-gateway.service
+conf_tg_gateway() {
+    set -e
+    tee /etc/systemd/system/tg-gateway.service > /dev/null <<EOF
+[Unit]
+Description=Telegram gateway bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=tg_gw
+Group=tg_gw
+
+EnvironmentFile=/usr/local/etc/telegram/secrets.env
+
+ExecStart=$TG_GATEWAY_SCRIPT_DEST
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    tee /etc/sudoers.d/tg_gw > /dev/null <<EOF
+tg_gw ALL=(root) NOPASSWD: \
+    $USERADD_SCRIPT_DEST, \
+    $USERDEL_SCRIPT_DEST, \
+    $USEREXP_SCRIPT_DEST, \
+    $USERBLOCK_SCRIPT_DEST, \
+    $USERSHOW_SCRIPT_DEST, \
+    $SYS_INFO_SCRIPT_DEST \
+    reboot \
+    systemctl restart xray.service
+EOF
+
+    chmod 440 /etc/sudoers.d/tg_gw
+    chown root:root /etc/sudoers.d/tg_gw
+
+}
+
+# start Telegram gateway
+run_and_check "reload systemd" systemctl daemon-reload
+run_and_check "enable autostart Telegram gateway service" systemctl -q enable tg-gateway.service
+run_and_check "start Telegram gateway service" systemctl start tg-gateway.service
 
 
 # add user for xray

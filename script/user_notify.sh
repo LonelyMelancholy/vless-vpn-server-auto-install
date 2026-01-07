@@ -39,6 +39,8 @@ trap 'on_exit' EXIT
 
 # main variables
 readonly XRAY_CONFIG="/usr/local/etc/xray/config.json"
+readonly TR_DB_M="/var/log/xray/TR_DB_M"
+readonly TR_DB_Y="/var/log/xray/TR_DB_Y"
 readonly INBOUND_TAG="Vless"
 readonly XRAY="/usr/local/bin/xray"
 readonly APISERVER="127.0.0.1:8080"
@@ -124,16 +126,23 @@ source "$ENV_FILE"
 # check id from secret file
 [[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
-# reset traffic 1 day of month
-RESET_ARG=""
-[[ "$(date +%d)" = "01" ]] && RESET_ARG="1"
+# reset traffic 1 day of month and year
+RESET_ARG_M=""
+[[ "$(date +%d)" = "01" ]] && RESET_ARG_M="1"
+
+[[ "$(date +%j)" = "001" ]] && RESET_ARG_Y="1"
 
 # get stat json
-readonly RAW="$(cat "/var/log/xray/TR_DB")"
+readonly RAW="$(cat "$TR_DB_M")"
 
 # reset traffic 1 day of month
-if [[ $RESET_ARG == "1" ]]; then
-    rm -f "/var/log/xray/TR_DB"
+if [[ $RESET_ARG_M == "1" ]]; then
+    rm -f "$TR_DB_M"
+fi
+
+# reset traffic 1 day of year
+if [[ $RESET_ARG_Y == "1" ]]; then
+    rm -f "$TR_DB_Y"
 fi
 
 # parse json to name:name:number
