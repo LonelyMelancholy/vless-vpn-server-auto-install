@@ -41,9 +41,6 @@ declare -A DEVICES_BY_USER=()
 declare -A TRAFFIC_BY_USER=()
 
 # NOTE: file checks are done per option (links/all)
-
-have_cmd() { command -v "$1" >/dev/null 2>&1; }
-
 parse_exp_date() {
   # Extract YYYY-MM-DD from strings like: "...|exp=2026-04-16".
   # Prints nothing if not found.
@@ -60,12 +57,8 @@ calc_days_left() {
 }
 
 fmt_bytes() {
-  local b="$1"
-  if have_cmd numfmt; then
+    local b="$1"
     numfmt --to=iec --suffix=B "$b" 2>/dev/null || echo "$b"
-  else
-    echo "$b"
-  fi
 }
 
 add_user() {
@@ -124,8 +117,6 @@ collect_blocked_users() {
 
 collect_online_devices() {
   # Fill DEVICES_BY_USER based on xray api outputs.
-  have_cmd xray || return 0
-  have_cmd jq || return 0
 
   local stats_json
   stats_json="$(xray api statsquery 2>/dev/null || true)"
@@ -159,7 +150,6 @@ collect_online_devices() {
 }
 
 collect_traffic() {
-  have_cmd jq || return 0
   [[ -r "$TR_DB_M" ]] || return 0
 
   local raw
@@ -236,11 +226,8 @@ print_all_table() {
     out+="${u} (${online})\t${devices}\t${status}\t${traffic}\t${days}"$'\n'
   done < <(printf '%s\n' "${!USER_SET[@]}" | LC_ALL=C sort)
 
-  if have_cmd column; then
-    printf '%s' "$out" | column -t -s $'\t'
-  else
-    printf '%s' "$out"
-  fi
+    printf '%b' "$out" | column -t -s $'\t'
+
 }
 
 case "$OPTION" in

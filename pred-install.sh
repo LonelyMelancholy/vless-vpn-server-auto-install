@@ -42,6 +42,13 @@ CFG_CHECK="module/cfg_check.sh"
 [[ -r "$CFG_CHECK" ]] || { echo "❌ Error: check '$CFG_CHECK' it's missing or you do not have read permissions, exit"; exit 1; }
 source "$CFG_CHECK"
 
+# hostname change
+if hostnamectl set-hostname "$NEW_HOSTNAME"; then
+    echo "✅ Success: set new hostname"
+else
+    echo "❌ Error: set new hostname"
+fi
+
 # update system
 if [[ -n "$UBUNTU_PRO_TOKEN" ]]; then
     if command -v pro &> /dev/null; then
@@ -85,7 +92,7 @@ install_and_update() {
 
 # utilities check
 missing_pkgs=()
-for utility in curl unzip jq openssl update-ca-certificates ifstat; do
+for utility in curl unzip jq openssl update-ca-certificates bsdextrautils ifstat; do
     if ! command -v "$utility" &> /dev/null; then
         missing_pkgs+=("$utility")
     fi

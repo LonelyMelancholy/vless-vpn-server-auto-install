@@ -8,6 +8,20 @@ if [[ ! -r "$CFG_FILE" ]]; then
 fi
 
 # username check
+NEW_HOSTNAME=$(awk -F'"' '/^[[:space:]]*Server name/ {print $2}' "$CFG_FILE")
+if [[ -z "$NEW_HOSTNAME" ]]; then
+    echo "❌ Error: 'Server name' is empty in '$CFG_FILE', exit"
+    exit 1
+fi
+
+if [[ "$NEW_HOSTNAME" =~ ^[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?$ ]]; then
+    echo "✅ Success: server name accepted"
+else
+    echo "❌ Error: 'Server name' '$NEW_HOSTNAME' does not comply with Linux rules, exit"
+    exit 1
+fi
+
+# username check
 SECOND_USER=$(awk -F'"' '/^[[:space:]]*Server administrator username/ {print $2}' "$CFG_FILE")
 if [[ -z "$SECOND_USER" ]]; then
     echo "❌ Error: 'Server administrator username' is empty in '$CFG_FILE', exit"
@@ -84,8 +98,6 @@ XRAY_DAYS=$(awk -F'"' '/^[[:space:]]*Days/ {print $2}' "$CFG_FILE")
 if [[ -z "$XRAY_DAYS" ]]; then
     echo "❌ Error: 'Days' is empty in '$CFG_FILE', exit"
     exit 1
-else
-    echo "✅ Success: days for xray accepted"
 fi
 
 if [[ ! $XRAY_DAYS =~ ^[0-9]+$ ]]; then

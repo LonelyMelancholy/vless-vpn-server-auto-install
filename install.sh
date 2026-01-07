@@ -617,9 +617,9 @@ XRAY_BACKUP_SCRIPT_DEST="/usr/local/bin/service/xray_backup.sh"
 install_scr_xray_backup() {
     set -e
     install -m 700 -o root -g root "$XRAY_BACKUP_SCRIPT_SOURCE" "$XRAY_BACKUP_SCRIPT_DEST"
-    tee /etc/cron.d/xray_backup > /dev/null <<EOF
+    tee /etc/cron.d/xray_backup > /dev/null <<'EOF'
 SHELL=/bin/bash
-0 23 28-31 * * root [ "$(date -v+1d +\%d)" = "01" ] && "$XRAY_BACKUP_SCRIPT_DEST" &> /dev/null
+0 23 28-31 * * root [ "$(date -d tomorrow +\%d)" = "01" ] && "/usr/local/bin/service/xray_backup.sh" &> /dev/null
 EOF
     chmod 644 "/etc/cron.d/xray_backup"
 }
@@ -694,17 +694,13 @@ ExecStart=$TG_GATEWAY_SCRIPT_DEST
 Restart=always
 RestartSec=5
 
-NoNewPrivileges=yes
 PrivateTmp=yes
-ProtectSystem=strict
-ProtectHome=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 ProtectKernelModules=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 RestrictNamespaces=yes
-RestrictSUIDSGID=yes
 SystemCallArchitectures=native
 
 [Install]

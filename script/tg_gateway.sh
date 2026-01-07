@@ -34,28 +34,28 @@ STATE=""   # "", "WAIT_BLOCK", "WAIT_UNBLOCK", "WAIT_DELETE", "WAIT_ADD", "WAIT_
 MAIN_KB_JSON='{
     "inline_keyboard":[
         [
-            {"text":"Server information","callback_data":"SHOW_STAT"},
-            {"text":"Server backup","callback_data":"SEND_BACKUP"}  
+            {"text":"🔎🖥️ Server information","callback_data":"SHOW_STAT"},
+            {"text":"🗄️🖥️ Server backup","callback_data":"SEND_BACKUP"}  
         ],
         [
-            {"text":"Server reboot","callback_data":"ASK_SERVER_REBOOT"},
-            {"text":"Xray restart","callback_data":"ASK_XRAY_RESTART"}
+            {"text":"🔄🖥️ Server reboot","callback_data":"ASK_SERVER_REBOOT"},
+            {"text":"🔄🌐 Xray restart","callback_data":"ASK_XRAY_RESTART"}
         ],
         [
-            {"text":"🔎 Show users links","callback_data":"SHOW_LINK"},
-            {"text":"🔎 Show users info","callback_data":"SHOW_ALL"}
+            {"text":"🔎🧑🏿‍💻 Show users links","callback_data":"SHOW_LINK"},
+            {"text":"🔎🧑🏿‍💻 Show users info","callback_data":"SHOW_ALL"}
         ],
         [
-            {"text":"🔒 Block user","callback_data":"ASK_BLOCK"},
-            {"text":"🔓 Unblock user","callback_data":"ASK_UNBLOCK"}
+            {"text":"🔒🧑🏿‍💻 Block user","callback_data":"ASK_BLOCK"},
+            {"text":"🔓🧑🏿‍💻 Unblock user","callback_data":"ASK_UNBLOCK"}
             
         ],
         [
-            {"text":"🧑🏿‍💻 Add new user","callback_data":"ASK_ADD"},
-            {"text":"☠️ Delete user","callback_data":"ASK_DELETE"}
+            {"text":"➕🧑🏿‍💻 Add new user","callback_data":"ASK_ADD"},
+            {"text":"☠️🧑🏿‍💻 Delete user","callback_data":"ASK_DELETE"}
         ],
         [
-            {"text":"⌚ Add time expired user","callback_data":"ASK_EXP"}
+            {"text":"⌚🧑🏿‍💻 Add time expired user","callback_data":"ASK_EXP"}
         ]
     ]
 }'
