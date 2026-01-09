@@ -11,7 +11,7 @@ export PATH
 [[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
 
 # wait for all service started
-sleep 60
+sleep 120
 
 # enable logging, the directory should already be created, but let's check just in case
 readonly DATE_LOG="$(date +"%Y-%m-%d")"

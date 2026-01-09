@@ -321,6 +321,12 @@ install_xray_dir() {
     try chown xray:telegram-gateway /var/log/xray
     TMP_DIR="$(mktemp -d)"
     readonly TMP_DIR
+    try touch "/var/log/xray/TR_DB_M"
+    try chmod 600 "/var/log/xray/TR_DB_M"
+    try chown telegram-gateway:telegram-gateway "/var/log/xray/TR_DB_M"
+    try touch "/var/log/xray/TR_DB_Y"
+    try chmod 600 "/var/log/xray/TR_DB_Y"
+    try chown telegram-gateway:telegram-gateway "/var/log/xray/TR_DB_Y"
 }
 run_and_check "create directory for the xray service" install_xray_dir
 
@@ -682,7 +688,7 @@ readonly URI_PATH="/usr/local/etc/xray/URI_DB"
 touch "$URI_PATH"
 chmod 600 "$URI_PATH"
 chown telegram-gateway:telegram-gateway "$URI_PATH"
-tee -a "$URI_PATH" > /dev/null <<EOF
+tee "$URI_PATH" > /dev/null <<EOF
 name: $XRAY_NAME, created: $CREATED, days: $XRAY_DAYS, expiration: $EXP
 name: $XRAY_NAME, vless link: $VLESS_URI
 

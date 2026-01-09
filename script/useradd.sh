@@ -1,6 +1,10 @@
 #!/bin/bash
 # script for add user in xray config
 
+# export path just in case
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
 # user check
 [[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
 

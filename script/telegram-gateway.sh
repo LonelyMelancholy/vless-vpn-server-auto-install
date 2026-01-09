@@ -69,6 +69,11 @@ api_post() {
   curl -sS --max-time 70 -X POST "${API}/${method}" "$@"
 }
 
+restart_xray() {
+    systemctl restart xray.service || return 1
+    echo "Xray restarted"
+}
+
 delete_message() {
   local chat_id="$1"
   local msg_id="$2"
@@ -406,8 +411,7 @@ handle_message() {
             ;;
         WAIT_RESTART)
             STATE=""
-            run_and_send_output "$chat_id" systemctl restart xray.service && \
-            run_and_send_output "$chat_id" echo "Xray restarted" || \
+            run_and_send_output "$chat_id" restart_xray || \
             run_and_send_output "$chat_id" echo "Xray fail to restart"
             show_menu "$chat_id"
             ;;

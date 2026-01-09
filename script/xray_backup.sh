@@ -39,8 +39,8 @@ trap 'on_exit' EXIT
 readonly WAIT_SEC="$(shuf -i "10-60" -n 1)"
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/run/lock/backup.lock"
-exec 99> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+readonly LOCK_FILE_5="/run/lock/backup.lock"
+exec 99> "$LOCK_FILE_5" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_5', exit"; exit 1; }
 flock -n 99 || { echo "❌ Error: another instance working on backup, exit"; exit 1; }
 
 # check another instanсe of the script is not running (with retries)
