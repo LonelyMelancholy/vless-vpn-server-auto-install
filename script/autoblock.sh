@@ -187,7 +187,7 @@ new_conf() {
     # set trap for tmp removing
     trap 'on_exit; rm -f "$TMP_XRAY_CONFIG";' EXIT
 
-    try jq \
+    jq \
         --arg inbound "$INBOUND_TAG" \
         --arg out "$BLOCK_OUTBOUND_TAG" \
         --arg ruleTag "$RULE_TAG" \

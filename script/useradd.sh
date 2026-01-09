@@ -122,7 +122,7 @@ xray_useradd() {
     trap 'rm -f "$TMP_XRAY_CONFIG"' EXIT
     
     # add user
-    try jq --arg tag "$INBOUND_TAG" \
+    jq --arg tag "$INBOUND_TAG" \
         --arg email "$XRAY_EMAIL" \
         --arg id "$UUID" \
         --arg dflow "$DEFAULT_FLOW" '

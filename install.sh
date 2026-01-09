@@ -562,7 +562,7 @@ conf_json_xray() {
     trap 'rm -rf "$TMP_XRAY_CONFIG" "$TMP_DIR"' EXIT
     
 # update json
-    try jq --arg tag   "$INBOUND_TAG" \
+    jq --arg tag   "$INBOUND_TAG" \
     --arg email "$XRAY_EMAIL" \
     --arg id    "$UUID" \
     --arg dflow "$DEFAULT_FLOW" \

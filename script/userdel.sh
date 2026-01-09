@@ -102,7 +102,7 @@ xray_userdel() {
     trap 'rm -f "$TMP_XRAY_CONFIG" "$TMP_URI"' EXIT
 
     # delete user and add to tmp conf (also clear from block rules)
-    try jq --arg t "$USERNAME" --arg tag "$INBOUND_TAG" '
+    jq --arg t "$USERNAME" --arg tag "$INBOUND_TAG" '
         def base: split("|")[0];
 
         # remove from inbound clients (by email base part before "|")
@@ -186,7 +186,7 @@ if [[ "$REMOVED" -gt 0 && -f "$URI_PATH" ]]; then
         trap 'rm -f "$TMP_XRAY_CONFIG" "$TMP_URI"' EXIT
 
         # paste in tmp file without username
-        try awk -v t="$USERNAME" '
+        awk -v t="$USERNAME" '
             BEGIN { skipping=0 }
             $0 ~ ("^name:[ \t]*" t "([ \t,].*|$)") {
                 skipping=1
@@ -197,10 +197,10 @@ if [[ "$REMOVED" -gt 0 && -f "$URI_PATH" ]]; then
                 next
             }
             { print }
-        ' "$URI_PATH" > "$TMP_URI"
+        ' "$URI_PATH" > "$TMP_URI" || return 1
 
         # write from tmp to uri
-        try cat "$TMP_URI" > "$URI_PATH"
+        cat "$TMP_URI" > "$URI_PATH" || return 1
     }
 
     run_and_check "clear user from URI database" uri_userdel

@@ -136,7 +136,7 @@ unblock_and_add_time() {
     # set trap for deleting tmp files
     trap 'rm -f "$TMP_XRAY_CONFIG"' EXIT
 
-try jq \
+jq \
   --arg inboundTag "$INBOUND_TAG" \
   --arg ruleTag "$BLOCK_RULE_TAG" \
   --arg name "$USERNAME" \
@@ -169,7 +169,7 @@ try jq \
    else
       .
    end)
-' "$XRAY_CONFIG" > "$TMP_XRAY_CONFIG"
+' "$XRAY_CONFIG" > "$TMP_XRAY_CONFIG" || return 1
 
     # backup
     try cp -a "$XRAY_CONFIG" "$XRAY_BACKUP_PATH"
@@ -223,19 +223,19 @@ update_uri_db() {
     fi
 
   # renew only one sring created/days/expiration, not change other
-    try awk -v n="$USERNAME" -v today="$TODAY" -v days="$DAYS" -v expiration="$EXP" '
+    awk -v n="$USERNAME" -v today="$TODAY" -v days="$DAYS" -v expiration="$EXP" '
         $0 ~ ("^name: " n ", created: ") {
         print "name: " n ", created: " today ", days: " days ", expiration: " expiration
         next
         }
         {print}
-    ' "$URI_FILE" > "$TMP_URI_FILE"
+    ' "$URI_FILE" > "$TMP_URI_FILE" | return 1
 
     # backup
     try cp -a "$URI_FILE" "$URI_BACKUP_PATH"
 
     # write from tmp to uri
-    try cat "$TMP_URI_FILE" > "$URI_FILE"
+    cat "$TMP_URI_FILE" > "$URI_FILE" | return 1
 
 }
 
