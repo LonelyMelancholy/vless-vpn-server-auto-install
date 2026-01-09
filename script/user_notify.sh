@@ -1,21 +1,20 @@
 #!/bin/bash
 # script for notify xray traffic and user exp date via cron every day 1:01 night time
 # all errors are logged, except the first three, for debugging, add a redirect to the debug log
-# 1 1 * * * root /usr/local/bin/telegram/user_notify.sh &> /dev/null
+# 1 1 * * * telegram-gateway /usr/local/bin/telegram/user_notify.sh &> /dev/null
 # exit codes work to tell Cron about success
 
 # export path just in case
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
-# root check
-[[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
 
 # enable logging, the directory should already be created, but let's check just in case
 readonly DATE_LOG="$(date +"%Y-%m-%d")"
 readonly LOG_DIR="/var/log/telegram"
 readonly NOTIFY_LOG="${LOG_DIR}/user.${DATE_LOG}.log"
-mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$NOTIFY_LOG" || { echo "❌ Error: cannot write to log '$NOTIFY_LOG', exit"; exit 1; }
 
 # start logging message
@@ -45,29 +44,60 @@ readonly INBOUND_TAG="Vless"
 readonly HOSTNAME="$(hostname)"
 readonly MAX_ATTEMPTS="3"
 
+# check xray conf
+if [[ ! -r "$XRAY_CONFIG" ]]; then
+    echo "❌ Error: check $XRAY_CONFIG it's missing or you do not have read permissions, exit"
+    exit 1
+fi
+
+# check secret file, if the file is ok, we source it.
+readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
+if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -c '%U:%a' "$ENV_FILE" 2>/dev/null)" != "telegram-gateway:600" ]]; then
+    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
+    exit 1
+fi
+source "$ENV_FILE"
+
+# check token from secret file
+[[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
+
+# check id from secret file
+[[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
+
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/var/run/user.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance working on xray configuration or URI DB, exit"; exit 1; }
-
+readonly LOCK_FILE="/run/lock/xray_config.lock"
+exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
 # check another instance is not running (with retries)
-readonly LOCK_FILE_2="/var/run/userstat.lock"
-
-exec 8> "$LOCK_FILE_2" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_2', exit"; exit 1; }
-
 wait_sec=10
-
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   if flock -n 8; then
-    # lock acquired; FD 8 stays open -> lock held until script exits
     break
   fi
 
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-    echo "❌ Error: Lock busy ($LOCK_FILE_2). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    echo "❌ Error: Lock busy ($LOCK_FILE). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
     sleep "$wait_sec"
   else
-    echo "❌ Error: lock is still busy after $MAX_ATTEMPTS attempts, exit"
+    echo "❌ Error: lock ($LOCK_FILE) is still busy after $MAX_ATTEMPTS attempts, exit"
+    exit 1
+  fi
+done
+
+# check another instanсe of the script is not running
+readonly LOCK_FILE_3="/run/lock/tr_db.lock"
+exec 10> "$LOCK_FILE_3" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_3', exit"; exit 1; }
+# check another instance is not running (with retries)
+wait_sec=10
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  if flock -n 10; then
+    break
+  fi
+
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "❌ Error: Lock busy ($LOCK_FILE_3). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$wait_sec"
+  else
+    echo "❌ Error: lock ($LOCK_FILE_3) is still busy after $MAX_ATTEMPTS attempts, exit"
     exit 1
   fi
 done
@@ -103,26 +133,6 @@ telegram_message() {
     done
     return 0
 }
-
-# check xray conf
-if [[ ! -r "$XRAY_CONFIG" ]]; then
-    echo "❌ Error: check $XRAY_CONFIG it's missing or you do not have read permissions, exit"
-    exit 1
-fi
-
-# check secret file, if the file is ok, we source it.
-readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
-if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -c '%U:%a' "$ENV_FILE" 2>/dev/null)" != "root:600" ]]; then
-    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
-    exit 1
-fi
-source "$ENV_FILE"
-
-# check token from secret file
-[[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
-
-# check id from secret file
-[[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
 # reset traffic 1 day of month and year
 RESET_ARG_M=""

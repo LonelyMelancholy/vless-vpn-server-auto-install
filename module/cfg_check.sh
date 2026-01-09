@@ -14,7 +14,7 @@ if [[ -z "$NEW_HOSTNAME" ]]; then
     exit 1
 fi
 
-if [[ "$NEW_HOSTNAME" =~ ^[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}[A-Za-z0-9])?$ ]]; then
+if [[ $NEW_HOSTNAME =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,62}[A-Za-z0-9])?$ ]]; then
     echo "✅ Success: server name accepted"
 else
     echo "❌ Error: 'Server name' '$NEW_HOSTNAME' does not comply with Linux rules, exit"

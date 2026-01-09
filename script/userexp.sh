@@ -1,13 +1,22 @@
 #!/bin/bash
 # script for add time user in xray config
 
-# root check
-[[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
+# export path just in case
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/var/run/user.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance working on xray configuration or URI DB, exit"; exit 1; }
+readonly LOCK_FILE="/run/lock/xray_config.lock"
+exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 8 || { echo "❌ Error: another instance working on '$LOCK_FILE', exit"; exit 1; }
+
+# check another instanсe of the script is not running
+readonly LOCK_FILE_2="/run/lock/uri_db.lock"
+exec 9> "$LOCK_FILE_2" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_2', exit"; exit 1; }
+flock -n 9 || { echo "❌ Error: another instance working on '$LOCK_FILE_2', exit"; exit 1; }
 
 # main variables
 readonly XRAY_CONFIG="/usr/local/etc/xray/config.json"
@@ -173,7 +182,7 @@ jq \
 
 # add time user, check config, install if config valid and delete tmp files
 run_and_check "add time xray user" unblock_and_add_time
-run_and_check "check new xray config" sudo -u xray xray run -test -config "$TMP_XRAY_CONFIG"
+run_and_check "check new xray config" xray run -test -config "$TMP_XRAY_CONFIG"
 
 # Если нет изменений — выходим
 if cmp -s "$XRAY_CONFIG" "$TMP_XRAY_CONFIG"; then
@@ -182,14 +191,14 @@ if cmp -s "$XRAY_CONFIG" "$TMP_XRAY_CONFIG"; then
     exit 1
 fi
 
-run_and_check "install new xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "install new xray config" install -m 600 -o xray -g telegram-gateway "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
 run_and_check "delete temporary xray files " rm -f "$TMP_XRAY_CONFIG"
 
 # unset trap, tmp already deleted
 trap - EXIT
 
 # restart
-run_and_check "restart xray"  systemctl restart xray.service
+run_and_check "restart xray" systemctl restart xray.service
 
 # echo result
 echo "✅ Success: apply for '$USERNAME' from inbound tag '$INBOUND_TAG'"
@@ -229,7 +238,7 @@ update_uri_db() {
     cp -a "$URI_FILE" "$URI_BACKUP_PATH"
 
     # write from tmp to uri
-    install -m 600 -o root -g root "$TMP_URI_FILE" "$URI_FILE"
+    install -m 600 -o telegram-gateway -g telegram-gateway "$TMP_URI_FILE" "$URI_FILE"
 
 }
 

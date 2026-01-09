@@ -1,46 +1,60 @@
 #!/bin/bash
 # script for collecting xray traffic stat via cron every 1m
 # all errors are logged, except the first three, for debugging, add a redirect to the debug log
-# 0 * * * * root /usr/local/bin/service/userstat.sh &> /dev/null
+# 0 * * * * telegram-gateway /usr/local/bin/service/xray_stat.sh &> /dev/null
 # exit codes work to tell Cron about success
 
 # export path just in case
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
-# root check
-[[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
 
 # enable logging, the directory should already be created, but let's check just in case
 readonly DATE_LOG="$(date +"%Y-%m-%d")"
 readonly LOG_DIR="/var/log/service"
-readonly NOTIFY_LOG="${LOG_DIR}/userstat.${DATE_LOG}.log"
-mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
+readonly NOTIFY_LOG="${LOG_DIR}/xray_stat.${DATE_LOG}.log"
 exec &>> "$NOTIFY_LOG" || { echo "❌ Error: cannot write to log '$NOTIFY_LOG', exit"; exit 1; }
 
 # start logging message
 readonly DATE_START="$(date "+%Y-%m-%d %H:%M:%S")"
-echo "########## user stat started - $DATE_START ##########"
+echo "########## xray stat started - $DATE_START ##########"
 
 # exit logging message function
 RC="1"
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
         local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## user stat ended - $DATE_END ##########"
+        echo "########## xray stat ended - $DATE_END ##########"
     else
         local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## user stat failed - $DATE_FAIL ##########"
+        echo "########## xray stat failed - $DATE_FAIL ##########"
     fi
 }
 
 # trap for the end log message for the end log
 trap 'on_exit' EXIT
 
-# check another instanse of the script is not running
-readonly LOCK_FILE="/var/run/userstat.lock"
-exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 8 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+# check another instanсe of the script is not running
+readonly LOCK_FILE_3="/run/lock/tr_db.lock"
+exec 10> "$LOCK_FILE_3" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_3', exit"; exit 1; }
+# check another instance is not running (with retries)
+wait_sec=10
+readonly MAX_ATTEMPTS="3"
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  if flock -n 10; then
+    break
+  fi
+
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "❌ Error: Lock busy ($LOCK_FILE_3). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$wait_sec"
+  else
+    echo "❌ Error: lock ($LOCK_FILE_3) is still busy after $MAX_ATTEMPTS attempts, exit"
+    exit 1
+  fi
+done
 
 # helper func
 run_and_check() {
@@ -145,7 +159,7 @@ run_and_check "start merge tmp_m file" merge_old_new "$TMP_OLD_M" "$TMP_NEW_COMM
 run_and_check "start merge tmp_y file" merge_old_new "$TMP_OLD_Y" "$TMP_NEW_COMMON" "$TMP_OUT_Y"
 
 # install new TR_DB
-run_and_check "install new TR_DB_M file" install -m 644 -o root -g root "$TMP_OUT_M" "$OUT_FILE_M"
-run_and_check "install new TR_DB_Y file" install -m 644 -o root -g root "$TMP_OUT_Y" "$OUT_FILE_Y"
+run_and_check "install new TR_DB_M file" install -m 644 -o telegram-gateway -g telegram-gateway "$TMP_OUT_M" "$OUT_FILE_M"
+run_and_check "install new TR_DB_Y file" install -m 644 -o telegram-gateway -g telegram-gateway "$TMP_OUT_Y" "$OUT_FILE_Y"
 
 RC=0

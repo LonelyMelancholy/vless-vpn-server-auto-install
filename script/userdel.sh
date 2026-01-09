@@ -1,13 +1,22 @@
 #!/bin/bash
 # script for del user in xray config
 
-# root check
-[[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
+# export path just in case
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/var/run/user.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance working on xray configuration or URI DB, exit"; exit 1; }
+readonly LOCK_FILE="/run/lock/xray_config.lock"
+exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 8 || { echo "❌ Error: another instance working on '$LOCK_FILE', exit"; exit 1; }
+
+# check another instanсe of the script is not running
+readonly LOCK_FILE_2="/run/lock/uri_db.lock"
+exec 9> "$LOCK_FILE_2" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 9 || { echo "❌ Error: another instance working on '$LOCK_FILE', exit"; exit 1; }
 
 # argument check
 if [[ "$#" -ne 1 ]]; then
@@ -148,8 +157,8 @@ xray_userdel() {
 
 # del user, check config, install if config valid and delete tmp files, restart xray
 run_and_check "delete xray user" xray_userdel
-run_and_check "xray config checking" sudo -u xray xray run -test -config "$TMP_XRAY_CONFIG"
-run_and_check "install new xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "xray config checking" xray run -test -config "$TMP_XRAY_CONFIG"
+run_and_check "install new xray config" install -m 600 -o xray -g telegram-gateway "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
 run_and_check "restart xray service" systemctl restart xray.service
 
 # echo result
@@ -188,7 +197,7 @@ if [[ "$REMOVED" -gt 0 && -f "$URI_PATH" ]]; then
         ' "$URI_PATH" > "$TMP_URI"
 
         # write from tmp to uri
-        install -m 600 -o root -g root "$TMP_URI" "$URI_PATH"
+        install -m 600 -o telegram-gateway -g telegram-gateway "$TMP_URI" "$URI_PATH"
     }
 
     run_and_check "clear user from URI database" uri_userdel

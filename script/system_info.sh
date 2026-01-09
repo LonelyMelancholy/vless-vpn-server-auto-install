@@ -1,12 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# export path just in case
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
+
 # --- Basic info ---
 host="$(hostname)"
 
 # Uptime (pretty) from /proc/uptime
 read -r up _ < /proc/uptime
 up="${up%.*}"
+readonly MAX_ATTEMPTS="3"
+
+# check another instanсe of the script is not running
+readonly LOCK_FILE_3="/run/lock/tr_db.lock"
+exec 10> "$LOCK_FILE_3" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_3', exit"; exit 1; }
+# check another instance is not running (with retries)
+wait_sec=10
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  if flock -n 10; then
+    break
+  fi
+
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "❌ Error: Lock busy ($LOCK_FILE_3). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$wait_sec"
+  else
+    echo "❌ Error: lock ($LOCK_FILE_3) is still busy after $MAX_ATTEMPTS attempts, exit"
+    exit 1
+  fi
+done
 
 days=$((up / 86400))
 hrs=$(( (up % 86400) / 3600 ))

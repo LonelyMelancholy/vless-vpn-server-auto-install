@@ -1,21 +1,20 @@
 #!/bin/bash
 # script for autoblock xray expired user via cron every day 0:01 night time
 # all errors are logged, except the first three, for debugging, add a redirect to the debug log
-# 1 0 * * * root /usr/local/bin/service/autoblock.sh &> /dev/null
+# 1 0 * * * telegram-gateway /usr/local/bin/service/autoblock.sh &> /dev/null
 # exit codes work to tell Cron about success
 
 # export path just in case
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
-# root check
-[[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
 
 # enable logging, the directory should already be created, but let's check just in case
 readonly DATE_LOG="$(date +"%Y-%m-%d")"
 readonly LOG_DIR="/var/log/service"
 readonly AUTOBLOCK_LOG="${LOG_DIR}/autoblock.${DATE_LOG}.log"
-mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$AUTOBLOCK_LOG" || { echo "❌ Error: cannot write to log '$AUTOBLOCK_LOG', exit"; exit 1; }
 
 # start logging message
@@ -50,9 +49,43 @@ readonly XRAY_CONFIG_BACKUP="${XRAY_CONFIG}.bak.$(date +%Y%m%d_%H%M%S)"
 umask 022
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/var/run/user.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance working on xray configuration or URI DB, exit"; exit 1; }
+readonly LOCK_FILE="/run/lock/xray_config.lock"
+exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+# check another instance is not running (with retries)
+wait_sec=10
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  if flock -n 8; then
+    break
+  fi
+
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "❌ Error: Lock busy ($LOCK_FILE). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$wait_sec"
+  else
+    echo "❌ Error: lock ($LOCK_FILE) is still busy after $MAX_ATTEMPTS attempts, exit"
+    exit 1
+  fi
+done
+
+# check xray conf
+if [[ ! -r "$XRAY_CONFIG" || ! -w "$XRAY_CONFIG" ]]; then
+    echo "❌ Error: check $XRAY_CONFIG it's missing or you do not have read permissions, exit"
+    exit 1
+fi
+
+# check secret file, if the file is ok, we source it.
+readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
+if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -c '%U:%a' "$ENV_FILE" 2>/dev/null)" != "telegram-gateway:600" ]]; then
+    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
+    exit 1
+fi
+source "$ENV_FILE"
+
+# check token from secret file
+[[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
+
+# check id from secret file
+[[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
 # helper func
 run_and_check() {
@@ -97,26 +130,6 @@ telegram_message() {
     done
     return 0
 }
-
-# check xray conf
-if [[ ! -r "$XRAY_CONFIG" || ! -w "$XRAY_CONFIG" ]]; then
-    echo "❌ Error: check $XRAY_CONFIG it's missing or you do not have read permissions, exit"
-    exit 1
-fi
-
-# check secret file, if the file is ok, we source it.
-readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
-if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -c '%U:%a' "$ENV_FILE" 2>/dev/null)" != "root:600" ]]; then
-    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
-    exit 1
-fi
-source "$ENV_FILE"
-
-# check token from secret file
-[[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
-
-# check id from secret file
-[[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
 # parse old conf for exp email
 parse_conf() {
@@ -213,11 +226,11 @@ if cmp -s "$XRAY_CONFIG" "$TMP_XRAY_CONFIG"; then
 fi
 
 # check new conf
-run_and_check "xray new config checking" sudo -u xray xray run -test -config "$TMP_XRAY_CONFIG"
+run_and_check "xray new config checking" xray run -test -config "$TMP_XRAY_CONFIG"
 
 # backup and install new config
 run_and_check "backup old xray config" cp -a "$XRAY_CONFIG" "$XRAY_CONFIG_BACKUP"
-run_and_check "install new xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "install new xray config" install -m 660 -o xray -g telegram-gateway "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
 
 if (( ${#expired_emails[@]} == 0 )); then
     echo "✅ Success: expired users not found, cleanup old ruleTag '$RULE_TAG' (today=$TODAY)"

@@ -9,14 +9,13 @@ PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 umask 077
 
-# root check
-[[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
 
 # enable logging, the directory should already be created, but let's check just in case
 readonly DATE_LOG="$(date +"%Y-%m-%d")"
 readonly LOG_DIR="/var/log/service"
 readonly BACKUP_LOG="${LOG_DIR}/backup.${DATE_LOG}.log"
-mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$BACKUP_LOG" || { echo "❌ Error: cannot write to log '$BACKUP_LOG', exit"; exit 1; }
 
 # start logging message
@@ -39,9 +38,81 @@ on_exit() {
 trap 'on_exit' EXIT
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/var/run/backup.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance working on backup, exit"; exit 1; }
+readonly LOCK_FILE="/run/lock/backup.lock"
+exec 99> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 99 || { echo "❌ Error: another instance working on backup, exit"; exit 1; }
+
+# check another instanсe of the script is not running
+readonly LOCK_FILE="/run/lock/xray_config.lock"
+exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+# check another instance is not running (with retries)
+wait_sec=10
+readonly MAX_ATTEMPTS="3"
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  if flock -n 8; then
+    break
+  fi
+
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "❌ Error: Lock busy ($LOCK_FILE). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$wait_sec"
+  else
+    echo "❌ Error: lock ($LOCK_FILE) is still busy after $MAX_ATTEMPTS attempts, exit"
+    exit 1
+  fi
+done
+
+# check another instanсe of the script is not running
+readonly LOCK_FILE_2="/run/lock/uri_db.lock"
+exec 9> "$LOCK_FILE_2" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_2', exit"; exit 1; }
+# check another instance is not running (with retries)
+wait_sec=10
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  if flock -n 9; then
+    break
+  fi
+
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "❌ Error: Lock busy ($LOCK_FILE_2). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$wait_sec"
+  else
+    echo "❌ Error: lock ($LOCK_FILE_2) is still busy after $MAX_ATTEMPTS attempts, exit"
+    exit 1
+  fi
+done
+
+# check another instanсe of the script is not running
+readonly LOCK_FILE_3="/run/lock/tr_db.lock"
+exec 10> "$LOCK_FILE_3" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_3', exit"; exit 1; }
+# check another instance is not running (with retries)
+wait_sec=10
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+  if flock -n 10; then
+    break
+  fi
+
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "❌ Error: Lock busy ($LOCK_FILE_3). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$wait_sec"
+  else
+    echo "❌ Error: lock ($LOCK_FILE_3) is still busy after $MAX_ATTEMPTS attempts, exit"
+    exit 1
+  fi
+done
+
+# check secret file, if the file is ok, we source it.
+readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
+if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -c '%U:%a' "$ENV_FILE" 2>/dev/null)" != "telegram-gateway:600" ]]; then
+    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
+    exit 1
+fi
+source "$ENV_FILE"
+
+# check token from secret file
+[[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
+
+# check id from secret file
+[[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
 FILES=(
   "/var/log/xray/TR_DB_M"
@@ -58,20 +129,6 @@ ARCHIVE_PATH="/tmp/${ARCHIVE_NAME}"
 TMPDIR="$(mktemp -d)"
 cleanup() { rm -rf "$TMPDIR"; }
 trap 'on_exit; cleanup;' EXIT
-
-# check secret file, if the file is ok, we source it.
-readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
-if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -c '%U:%a' "$ENV_FILE" 2>/dev/null)" != "root:600" ]]; then
-    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
-    exit 1
-fi
-source "$ENV_FILE"
-
-# check token from secret file
-[[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
-
-# check id from secret file
-[[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
 # pure Telegram message function with checking the sending status
 _tg_m() {

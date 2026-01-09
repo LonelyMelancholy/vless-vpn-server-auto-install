@@ -7,8 +7,8 @@
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
-# root check
-[[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
 
 # wait for all service started
 sleep 60
@@ -17,7 +17,6 @@ sleep 60
 readonly DATE_LOG="$(date +"%Y-%m-%d")"
 readonly LOG_DIR="/var/log/telegram"
 readonly NOTIFY_LOG="${LOG_DIR}/boot.${DATE_LOG}.log"
-mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$NOTIFY_LOG" || { echo "❌ Error: cannot write to log '$NOTIFY_LOG', exit"; exit 1; }
 
 # start logging message
@@ -40,9 +39,23 @@ on_exit() {
 trap 'on_exit' EXIT
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/var/run/boot_notify.lock"
+readonly LOCK_FILE="/run/lock/boot_notify.lock"
 exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
 flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+
+# check secret file, if the file is ok, we source it.
+readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
+if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -L -c '%U:%a' "$ENV_FILE" 2> /dev/null)" != "telegram-gateway:600" ]]; then
+    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
+    exit 1
+fi
+source "$ENV_FILE"
+
+# check token from secret file
+[[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
+
+# check id from secret file
+[[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
 # pure Telegram message function with checking the sending status
 _tg_m() {
@@ -75,20 +88,6 @@ telegram_message() {
         fi
     done
 }
-
-# check secret file, if the file is ok, we source it.
-readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
-if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -L -c '%U:%a' "$ENV_FILE" 2> /dev/null)" != "root:600" ]]; then
-    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
-    exit 1
-fi
-source "$ENV_FILE"
-
-# check token from secret file
-[[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
-
-# check id from secret file
-[[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
 # wait for internet access
 wait_internet() {

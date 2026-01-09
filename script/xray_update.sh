@@ -15,7 +15,6 @@ export PATH
 readonly DATE="$(date +"%Y-%m-%d")"
 readonly LOG_DIR="/var/log/service"
 readonly UPDATE_LOG="${LOG_DIR}/xray_update.${DATE}.log"
-mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$UPDATE_LOG" || { echo "❌ Error: cannot write to log '$UPDATE_LOG', exit"; exit 1; }
 
 # start logging message
@@ -38,9 +37,9 @@ trap 'on_exit' EXIT
 RC=1
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/var/run/xray_update.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+readonly LOCK_FILE="/run/lock/xray_update.lock"
+exec 99> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 99 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 
 # main variables
 readonly ASSET_DIR="/usr/local/share/xray"
@@ -96,7 +95,7 @@ cleanup_old_backups_and_logs() {
 
 # check secret file
 readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
-if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -L -c '%U:%a' "$ENV_FILE")" != "root:600" ]]; then
+if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -L -c '%U:%a' "$ENV_FILE")" != "telegram-gateway:600" ]]; then
     echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
     exit 1
 fi

@@ -5,12 +5,16 @@ set -u
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
+
 # check secret file, file already source it via systemd
 readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
-if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -L -c '%U:%a' "$ENV_FILE" 2> /dev/null)" != "root:600" ]]; then
+if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -L -c '%U:%a' "$ENV_FILE" 2> /dev/null)" != "telegram-gateway:600" ]]; then
     echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
     exit 1
 fi
+source "$ENV_FILE"
 
 # check token from secret file
 [[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
@@ -125,7 +129,7 @@ send_chunks_4000() {
     send_message "$chat_id" "${text:0:max}"
     text="${text:max}"
     # small pause to reduce rate-limit risk
-    sleep 0.15
+    sleep 0.2
   done
   # send the rest (including empty)
   send_message "$chat_id" "$text"
@@ -139,7 +143,7 @@ answer_callback() {
 
 show_menu() {
   local chat_id="$1"
-  send_message "$chat_id" "Menu $HOSTNAME management bot.\nPlease choose command:" "$MAIN_KB_JSON"
+  send_message "$chat_id" "Menu $HOSTNAME management bot.\nPlease choose command:\n########################################" "$MAIN_KB_JSON"
 }
 
 is_admin_chat() {
@@ -169,12 +173,11 @@ run_and_send_output() {
   local tmp
   tmp="$(mktemp)"
   # run, capture stdout+stderr
-    local cmd=( sudo -n -- "$@" )
-    "${cmd[@]}" >"$tmp" 2>&1
+    "$@" >"$tmp" 2>&1
     local rc=$?
 
     local cmd_str
-    cmd_str="$(printf "%q " "${cmd[@]}")"
+    cmd_str="$(printf "%q " "$@")"
     cmd_str="${cmd_str% }"
 
     local body
@@ -199,6 +202,12 @@ prompt_two() {
   local chat_id="$1"
   local action_text="$2"
   send_message "$chat_id" "${action_text}\nEnter username and number of days, separated by a space or line break (or /cancel):"
+}
+
+prompt_reboot() {
+  local chat_id="$1"
+  local action_text="$2"
+  send_message "$chat_id" "${action_text}\nEnter yes for confirmation (or /cancel):"
 }
 
 handle_callback() {
@@ -247,11 +256,11 @@ handle_callback() {
 
         ASK_SERVER_REBOOT)
             STATE="WAIT_REBOOT"
-            prompt_one "$chat_id" "Server reboot."
+            prompt_reboot "$chat_id" "Server reboot."
         ;;
         ASK_XRAY_RESTART)
             STATE="WAIT_RESTART"
-            prompt_one "$chat_id" "Xray restart."
+            prompt_reboot "$chat_id" "Xray restart."
         ;;
         ASK_BLOCK)
             STATE="WAIT_BLOCK"
@@ -312,7 +321,7 @@ handle_message() {
     [[ -z "$who" ]] && who="User"
 
     STATE=""
-    send_message "$chat_id" "Hello ${who}\nWelcome to $HOSTNAME management bot.\nPlease choose command:" "$MAIN_KB_JSON"
+    send_message "$chat_id" "Hello ${who}\nWelcome to $HOSTNAME management bot.\nPlease choose command:\n########################################" "$MAIN_KB_JSON"
     return
   fi
 
@@ -387,7 +396,8 @@ handle_message() {
             STATE=""
             run_and_send_output "$chat_id" echo "Server reboot started"
             show_menu "$chat_id"
-            run_and_send_output "$chat_id" reboot
+            run_and_send_output "$chat_id" systemctl reboot || \
+            run_and_send_output "$chat_id" echo "Server fail to reboot"
             ;;
         WAIT_RESTART)
             STATE=""

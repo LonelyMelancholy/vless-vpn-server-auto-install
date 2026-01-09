@@ -15,7 +15,6 @@ export PATH
 readonly DATE_LOG="$(date +"%Y-%m-%d")"
 readonly LOG_DIR="/var/log/service"
 readonly UPGRADE_LOG="${LOG_DIR}/unattended-upgrade.${DATE_LOG}.log"
-mkdir -p "$LOG_DIR" || { echo "❌ Error: cannot create log dir '$LOG_DIR', exit"; exit 1; }
 exec &>> "$UPGRADE_LOG" || { echo "❌ Error: cannot write to log '$UPGRADE_LOG', exit"; exit 1; }
 
 # start logging message
@@ -40,9 +39,23 @@ on_exit() {
 trap 'on_exit' EXIT
 
 # check another instance of the script is not running
-readonly LOCK_FILE="/var/run/unattended_upgrade.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+readonly LOCK_FILE="/run/lock/unattended_upgrade.lock"
+exec 99> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 99 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+
+# check secret file, if the file is ok, we source it.
+readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
+if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -L -c '%U:%a' "$ENV_FILE")" != "telegram-gateway:600" ]]; then
+    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
+    exit 1
+fi
+source "$ENV_FILE"
+
+# check token from secret file
+[[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
+
+# check id from secret file
+[[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
 # pure Telegram message function with checking the sending status
 _tg_m() {
@@ -73,20 +86,6 @@ telegram_message() {
         fi
     done
 }
-
-# check secret file, if the file is ok, we source it.
-readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
-if [[ ! -f "$ENV_FILE" ]] || [[ "$(stat -L -c '%U:%a' "$ENV_FILE")" != "root:600" ]]; then
-    echo "❌ Error: env file '$ENV_FILE' not found or has wrong permissions, exit"
-    exit 1
-fi
-source "$ENV_FILE"
-
-# check token from secret file
-[[ -z "$BOT_TOKEN" ]] && { echo "❌ Error: Telegram bot token is missing in '$ENV_FILE', exit"; exit 1; }
-
-# check id from secret file
-[[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
 # main variables
 readonly HOSTNAME="$(hostname)"

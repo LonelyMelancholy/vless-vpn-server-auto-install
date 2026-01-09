@@ -1,13 +1,13 @@
 #!/bin/bash
 # script for block/unblock manualy xray user
 
-# root check
-[[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/var/run/user.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance working on xray configuration or URI DB, exit"; exit 1; }
+readonly LOCK_FILE="/run/lock/xray_config.lock"
+exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 8 || { echo "❌ Error: another instance working on '$LOCK_FILE', exit"; exit 1; }
 
 # main variables
 readonly XRAY_CONFIG="/usr/local/etc/xray/config.json"
@@ -203,7 +203,7 @@ case "$ACTION" in
     ;;
 esac
 
+run_and_check "new xray config checking" xray run -test -config "$TMP_XRAY_CONFIG"
 run_and_check "backup xray config" cp -a "$XRAY_CONFIG" "$BACKUP_PATH"
-run_and_check "new xray config checking" sudo -u xray xray run -test -config "$TMP_XRAY_CONFIG"
-run_and_check "install new xray config" install -m 600 -o xray -g xray "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "install new xray config" install -m 600 -o xray -g telegram-gateway "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
 run_and_check "restart xray service" systemctl restart xray.service

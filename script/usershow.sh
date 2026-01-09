@@ -6,13 +6,23 @@
 #   all   - print table:
 #           username (online/offline), number of device, (blocked/expired/enable), traffic, number days left
 
-# root check
-[[ $EUID -ne 0 ]] && { echo "❌ Error: you are not the root user, exit"; exit 1; }
+# user check
+[[ "$(whoami)" != "telegram-gateway" ]] && { echo "❌ Error: you are not the telegram-gateway user, exit"; exit 1; }
 
-# check another instance of the script is not running
-readonly LOCK_FILE="/var/run/user.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance working on xray configuration or URI DB, exit"; exit 1; }
+# check another instanсe of the script is not running
+readonly LOCK_FILE="/run/lock/xray_config.lock"
+exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 8 || { echo "❌ Error: another instance working on '$LOCK_FILE', exit"; exit 1; }
+
+# check another instanсe of the script is not running
+readonly LOCK_FILE_2="/run/lock/uri_db.lock"
+exec 9> "$LOCK_FILE_2" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 9 || { echo "❌ Error: another instance working on '$LOCK_FILE', exit"; exit 1; }
+
+# check another instanсe of the script is not running
+readonly LOCK_FILE_3="/run/lock/tr_db.lock"
+exec 10> "$LOCK_FILE_3" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 10 || { echo "❌ Error: another instance working on '$LOCK_FILE', exit"; exit 1; }
 
 # argument check
 if ! [[ "$#" -eq 1 ]]; then
