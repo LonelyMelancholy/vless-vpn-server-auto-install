@@ -131,7 +131,7 @@ fi
 unblock_and_add_time() {
     # make tmp file
     TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
-    try chmod 644 "$TMP_XRAY_CONFIG"
+    try chmod 600 "$TMP_XRAY_CONFIG"
     
     # set trap for deleting tmp files
     trap 'rm -f "$TMP_XRAY_CONFIG"' EXIT

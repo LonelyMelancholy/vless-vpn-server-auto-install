@@ -517,7 +517,7 @@ conf_json_xray() {
     # make tmp file
     TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
     try chmod 660 "$TMP_XRAY_CONFIG"
-    try chown xray:xray "$TMP_XRAY_CONFIG"
+    try chown root:xray "$TMP_XRAY_CONFIG"
     trap 'rm -rf "$TMP_XRAY_CONFIG" "$TMP_DIR"' EXIT
     
 # update json
