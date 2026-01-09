@@ -100,7 +100,6 @@ send_message() {
     local text
     text="$(printf '%b' "$raw_text")"
     local reply_markup="${3-}"
-
     local resp mid
 
   if [[ -n "${reply_markup}" ]]; then
@@ -195,13 +194,13 @@ run_and_send_output() {
 prompt_one() {
   local chat_id="$1"
   local action_text="$2"
-  send_message "$chat_id" "${action_text}\nEnter username (or /cancel):"
+  send_message "$chat_id" "${action_text}\nEnter username or /cancel:"
 }
 
 prompt_two() {
   local chat_id="$1"
   local action_text="$2"
-  send_message "$chat_id" "${action_text}\nEnter username and number of days, separated by a space or line break (or /cancel):"
+  send_message "$chat_id" "${action_text}\nEnter username and number of days, separated by a space/line break or /cancel:"
 }
 
 prompt_reboot() {
@@ -419,17 +418,17 @@ handle_message() {
             esac
 
             if [[ -z "${a:-}" || -z "${b:-}" ]]; then
-                send_message "$chat_id" "❌ Error: need 2 argument. Format: username number.\n${action}\nEnter username and number of days, separated by a space or line break (or /cancel):"
+                send_message "$chat_id" "❌ Error: need 2 argument. Format: username number.\n${action}\nEnter username and number of days, separated by a space/line break or /cancel:"
                 return
             fi
 
             if ! valid_arg "$a"; then
-                send_message "$chat_id" "❌ Error: username must be 1..30 characters long and contain only '-', letters, and numbers.\n${action}\nEnter username and number of days, separated by a space or line break (or /cancel):"
+                send_message "$chat_id" "❌ Error: username must be 1..30 characters long and contain only '-', letters, and numbers.\n${action}\nEnter username and number of days, separated by a space/line break or /cancel:"
                 return
             fi
 
             if ! valid_arg_num "$b"; then
-                send_message "$chat_id" "❌ Error: number must be 1..10 characters long and contain only numbers.\n${action}\nEnter username and number of days, separated by a space or line break (or /cancel):"
+                send_message "$chat_id" "❌ Error: number must be 1..10 characters long and contain only numbers.\n${action}\nEnter username and number of days, separated by a space/line break or /cancel:"
                 return
             fi
 

@@ -9,6 +9,11 @@ readonly LOCK_FILE="/run/lock/xray_config.lock"
 exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
 flock -n 8 || { echo "❌ Error: another instance working on '$LOCK_FILE', exit"; exit 1; }
 
+# prevents attempts to restart via this script while the update is in progress
+readonly LOCK_FILE_4="/run/lock/xray_update.lock"
+exec 99> "$LOCK_FILE_4" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_4', exit"; exit 1; }
+flock -n 99 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+
 # main variables
 readonly XRAY_CONFIG="/usr/local/etc/xray/config.json"
 readonly BACKUP_PATH="${XRAY_CONFIG}.$(date +%Y%m%d_%H%M%S).bak"
@@ -36,16 +41,12 @@ if [[ ! -r "$XRAY_CONFIG" || ! -w "$XRAY_CONFIG" ]]; then
 fi
 
 # helper func
+try() { "$@" || return 1; }
+
 run_and_check() {
-    local action="$1"
+    action="$1"
     shift 1
-    if "$@" > /dev/null; then
-        echo "✅ Success: $action"
-        return 0
-    else
-        echo "❌ Error: $action, exit"
-        exit 1
-    fi
+    "$@" > /dev/null && echo "✅ Success: $action" || { echo "❌ Error: $action, exit"; exit 1; }
 }
 
 # for block: find client emails in inbound Vless that match USERNAME or USERNAME|
@@ -104,31 +105,30 @@ jq_common_preamble='
 # start block/unblock
 case "$ACTION" in
     block)
-        # check client only in our tagged rule
-        mapfile -t EMAILS < <(get_blocked_emails_from_rule)
-        if [[ ${#EMAILS[@]} -gt 0 ]]; then
-            echo "❌ Error: client for block name '$USERNAME' already blocked in ruleTag '$RULE_TAG'"
-            exit 1
-        fi
+            # check client only in our tagged rule
+            mapfile -t EMAILS < <(get_blocked_emails_from_rule)
+            if [[ ${#EMAILS[@]} -gt 0 ]]; then
+                echo "❌ Error: client for block name '$USERNAME' already blocked in ruleTag '$RULE_TAG'"
+                exit 1
+            fi
 
-        # check client exist or not
-        mapfile -t EMAILS < <(get_client_emails)
-        if [[ ${#EMAILS[@]} -gt 0 ]]; then
-            echo "✅ Success: found client with name '$USERNAME' in inbound tag '$INBOUND_TAG'"
-        else
-            echo "❌ Error: not found client with name '$USERNAME' in inbound tag '$INBOUND_TAG', exit"
-            exit 1
-        fi
-
-        # make tmp file
-        TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
-        chmod 644 "$TMP_XRAY_CONFIG"
-
-        # set trap for tmp removing
-        trap 'rm -f "$TMP_XRAY_CONFIG"' EXIT
-        
+            # check client exist or not
+            mapfile -t EMAILS < <(get_client_emails)
+            if [[ ${#EMAILS[@]} -gt 0 ]]; then
+                echo "✅ Success: found client with name '$USERNAME' in inbound tag '$INBOUND_TAG'"
+            else
+                echo "❌ Error: not found client with name '$USERNAME' in inbound tag '$INBOUND_TAG', exit"
+                exit 1
+            fi
         block_user() {
-            jq --arg tag "$INBOUND_TAG" --arg bot "$BLOCK_OUTBOUND_TAG" --arg rt "$RULE_TAG" \
+            # make tmp file
+            TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
+            try chmod 644 "$TMP_XRAY_CONFIG"
+
+            # set trap for tmp removing
+            trap 'rm -f "$TMP_XRAY_CONFIG"' EXIT
+        
+            try jq --arg tag "$INBOUND_TAG" --arg bot "$BLOCK_OUTBOUND_TAG" --arg rt "$RULE_TAG" \
             --argjson emails "$(printf '%s\n' "${EMAILS[@]}" | jq -R . | jq -s .)" '
             '"$jq_common_preamble"' |
 
@@ -163,15 +163,15 @@ case "$ACTION" in
             exit 1
         fi
 
-        # make tmp file
-        TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
-        chmod 644 "$TMP_XRAY_CONFIG"
-
-        # set trap for tmp removing
-        trap 'rm -f "$TMP_XRAY_CONFIG"' EXIT
-
         unblock_user() {
-            jq --arg tag "$INBOUND_TAG" --arg bot "$BLOCK_OUTBOUND_TAG" --arg rt "$RULE_TAG" \
+            # make tmp file
+            TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
+            try chmod 644 "$TMP_XRAY_CONFIG"
+
+            # set trap for tmp removing
+            trap 'rm -f "$TMP_XRAY_CONFIG"' EXIT
+
+            try jq --arg tag "$INBOUND_TAG" --arg bot "$BLOCK_OUTBOUND_TAG" --arg rt "$RULE_TAG" \
             --argjson emails "$(printf '%s\n' "${EMAILS[@]}" | jq -R . | jq -s .)" '
             '"$jq_common_preamble"' |
 
@@ -205,5 +205,5 @@ esac
 
 run_and_check "new xray config checking" xray run -test -config "$TMP_XRAY_CONFIG"
 run_and_check "backup xray config" cp -a "$XRAY_CONFIG" "$BACKUP_PATH"
-run_and_check "install new xray config" install -m 600 -o xray -g telegram-gateway "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "install new xray config" cat "$TMP_XRAY_CONFIG" > "$XRAY_CONFIG"
 run_and_check "restart xray service" systemctl restart xray.service

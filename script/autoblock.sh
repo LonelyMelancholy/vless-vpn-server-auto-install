@@ -25,11 +25,11 @@ echo "########## autoblock started - $DATE_START ##########"
 RC="1"
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
-        local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## autoblock ended - $DATE_END ##########"
+        local date_end="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## autoblock ended - $date_end ##########"
     else
-        local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## autoblock failed - $DATE_FAIL ##########"
+        local date_fail="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## autoblock failed - $date_fail ##########"
     fi
 }
 
@@ -46,23 +46,36 @@ readonly TODAY_TS="$(date -d "$TODAY" +%s)"
 readonly HOSTNAME="$(hostname)"
 readonly MAX_ATTEMPTS="3"
 readonly XRAY_CONFIG_BACKUP="${XRAY_CONFIG}.bak.$(date +%Y%m%d_%H%M%S)"
-umask 022
+readonly WAIT_SEC="$(shuf -i "10-60" -n 1)"
 
-# check another instanсe of the script is not running
+# check another instanсe of the script is not running (with retries)
 readonly LOCK_FILE="/run/lock/xray_config.lock"
 exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-# check another instance is not running (with retries)
-wait_sec=10
-for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
   if flock -n 8; then
     break
   fi
-
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-    echo "❌ Error: Lock busy ($LOCK_FILE). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
-    sleep "$wait_sec"
+    echo "⚠️  Non-critical error: Lock busy ($LOCK_FILE). Waiting ${WAIT_SEC}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$WAIT_SEC"
   else
     echo "❌ Error: lock ($LOCK_FILE) is still busy after $MAX_ATTEMPTS attempts, exit"
+    exit 1
+  fi
+done
+
+# prevents attempts to restart via this script while the update is in progress (with retries)
+readonly LOCK_FILE_4="/run/lock/xray_update.lock"
+exec 99> "$LOCK_FILE_4" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_4', exit"; exit 1; }
+for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
+  if flock -n 99; then
+    break
+  fi
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "⚠️  Non-critical error: Lock busy ($LOCK_FILE_4). Waiting ${WAIT_SEC}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$WAIT_SEC"
+  else
+    echo "❌ Error: lock ($LOCK_FILE_4) is still busy after $MAX_ATTEMPTS attempts, exit"
     exit 1
   fi
 done
@@ -88,16 +101,12 @@ source "$ENV_FILE"
 [[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
 # helper func
+try() { "$@" || return 1; }
+
 run_and_check() {
     action="$1"
     shift 1
-    if "$@" > /dev/null; then
-        echo "✅ Success: $action"
-        return 0
-    else
-        echo "❌ Error: $action, exit"
-        exit 1
-    fi
+    "$@" > /dev/null && echo "✅ Success: $action" || { echo "❌ Error: $action, exit"; exit 1; }
 }
 
 # pure Telegram message function with checking the sending status
@@ -118,7 +127,7 @@ telegram_message() {
         if ! _tg_m; then
             if [[ "$attempt" -ge "$MAX_ATTEMPTS" ]]; then
                 echo "❌ Error: failed to send Telegram message after $attempt attempt, exit"
-                return 1
+                exit 1
             fi
             sleep 60
             ((attempt++))
@@ -133,8 +142,6 @@ telegram_message() {
 
 # parse old conf for exp email
 parse_conf() {
-    set -e
-
     # get email from inbound with tag
     mapfile -t EMAILS < <(
         jq -r --arg tag "$INBOUND_TAG" '
@@ -173,16 +180,14 @@ run_and_check "parse config for exp email" parse_conf
 
 # make new config
 new_conf() {
-    set -e
-
     # make tmp file
     TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
-    chmod 644 "$TMP_XRAY_CONFIG"
+    try chmod 644 "$TMP_XRAY_CONFIG"
 
     # set trap for tmp removing
     trap 'on_exit; rm -f "$TMP_XRAY_CONFIG";' EXIT
 
-    jq \
+    try jq \
         --arg inbound "$INBOUND_TAG" \
         --arg out "$BLOCK_OUTBOUND_TAG" \
         --arg ruleTag "$RULE_TAG" \
@@ -230,7 +235,7 @@ run_and_check "xray new config checking" xray run -test -config "$TMP_XRAY_CONFI
 
 # backup and install new config
 run_and_check "backup old xray config" cp -a "$XRAY_CONFIG" "$XRAY_CONFIG_BACKUP"
-run_and_check "install new xray config" install -m 660 -o xray -g telegram-gateway "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "install new xray config" cat "$TMP_XRAY_CONFIG" > "$XRAY_CONFIG"
 
 if (( ${#expired_emails[@]} == 0 )); then
     echo "✅ Success: expired users not found, cleanup old ruleTag '$RULE_TAG' (today=$TODAY)"
@@ -249,6 +254,7 @@ if systemctl restart xray.service; then
 else
     XRAY_STATUS="❌ <b>Xray status:</b> fail"
     XR_ST=1
+    RC=1
     echo "❌ Error: restart xray"
 fi
 

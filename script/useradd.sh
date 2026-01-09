@@ -14,6 +14,11 @@ readonly LOCK_FILE_2="/run/lock/uri_db.lock"
 exec 9> "$LOCK_FILE_2" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_2', exit"; exit 1; }
 flock -n 9 || { echo "❌ Error: another instance working on '$LOCK_FILE_2', exit"; exit 1; }
 
+# prevents attempts to restart via this script while the update is in progress
+readonly LOCK_FILE_4="/run/lock/xray_update.lock"
+exec 99> "$LOCK_FILE_4" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_4', exit"; exit 1; }
+flock -n 99 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+
 # main variables
 readonly URI_PATH="/usr/local/etc/xray/URI_DB"
 readonly XRAY_CONFIG="/usr/local/etc/xray/config.json"
@@ -25,7 +30,15 @@ readonly USERNAME="$1"
 readonly FRESH_INSTALL="${3:-0}"
 readonly URI_BAK="${URI_PATH}.$(date +%Y%m%d_%H%M%S).bak"
 DAYS="$2"
-umask 022
+
+# helper func
+try() { "$@" || return 1; }
+
+run_and_check() {
+    action="$1"
+    shift 1
+    "$@" > /dev/null && echo "✅ Success: $action" || { echo "❌ Error: $action, exit"; exit 1; }
+}
 
 # argument check
 if [[ "$#" -gt 3 ]]; then
@@ -77,19 +90,6 @@ if [[ ! -r "$XRAY_CONFIG" || ! -w "$XRAY_CONFIG" ]]; then
     exit 1
 fi
 
-# function error helper
-run_and_check() {
-    local action="$1"
-    shift 1
-    if "$@" > /dev/null; then
-        echo "✅ Success: $action"
-        return 0
-    else
-        echo "❌ Error: $action, exit"
-        exit 1
-    fi
-}
-
 # calculate exp and created date
 readonly CREATED="$(date +%F)"
 
@@ -126,13 +126,13 @@ xray_useradd() {
 
     # make tmp file
     TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
-    chmod 644 "$TMP_XRAY_CONFIG"
+    try chmod 644 "$TMP_XRAY_CONFIG"
 
     # set trap for deleting tmp files
     trap 'rm -f "$TMP_XRAY_CONFIG"' EXIT
     
     # add user
-    jq --arg tag "$INBOUND_TAG" \
+    try jq --arg tag "$INBOUND_TAG" \
         --arg email "$XRAY_EMAIL" \
         --arg id "$UUID" \
         --arg dflow "$DEFAULT_FLOW" '
@@ -154,7 +154,7 @@ xray_useradd() {
 run_and_check "add xray user in config" xray_useradd
 run_and_check "new xray config checking" xray run -test -config "$TMP_XRAY_CONFIG"
 run_and_check "backup xray config" cp -a "$XRAY_CONFIG" "$BACKUP_PATH"
-run_and_check "install new xray config" install -m 600 -o xray -g telegram-gateway "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "install new xray config" cat "$TMP_XRAY_CONFIG" > "$XRAY_CONFIG"
 run_and_check "delete temporary xray files " rm -f "$TMP_XRAY_CONFIG"
 
 # unset trap, tmp already deleted

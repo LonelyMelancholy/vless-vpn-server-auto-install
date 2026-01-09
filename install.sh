@@ -18,7 +18,6 @@ flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 
 
 # main variables
-umask 022
 MAX_ATTEMPTS=3
 export NEEDRESTART_SUSPEND=1
 
@@ -49,16 +48,13 @@ install_with_retry() {
     done
 }
 
+# helper func
+try() { "$@" || return 1; }
+
 run_and_check() {
     action="$1"
     shift 1
-    if "$@" > /dev/null; then
-        echo "✅ Success: $action"
-        return 0
-    else
-        echo "❌ Error: $action, exit"
-        exit 1
-    fi
+    "$@" > /dev/null && echo "✅ Success: $action" || { echo "❌ Error: $action, exit"; exit 1; }
 }
 
 
@@ -81,14 +77,13 @@ else
 fi
 
 install_tg_secret() {
-    set -e
-    mkdir -p "$ENV_PATH"
-    tee "$ENV_FILE" > /dev/null <<EOF
+    try mkdir -p "$ENV_PATH"
+    try tee "$ENV_FILE" > /dev/null <<EOF
 BOT_TOKEN="$READ_BOT_TOKEN"
 CHAT_ID="$READ_CHAT_ID"
 EOF
-    chown telegram-gateway:telegram-gateway "$ENV_FILE"
-    chmod 600 "$ENV_FILE"
+    try chown telegram-gateway:telegram-gateway "$ENV_FILE"
+    try chmod 600 "$ENV_FILE"
 }
 run_and_check "install secret file with token and ID for Telegram scripts" install_tg_secret
 
@@ -112,7 +107,6 @@ fi
 
 # changing password for root and user
 conf_pswd() {
-    set -e
     printf 'root:%s\n%s:%s\n' "$PASS" "$SECOND_USER" "$PASS" | chpasswd
 }
 
@@ -136,13 +130,12 @@ fi
 
 # creating a new sshd configuration
 install_sshd() {
-    set -e
-    install -m 644 -o root -g root "$SSH_CONF_SOURCE" "$SSH_CONF_DEST"
-    sed -i "s/{PORT}/$PORT/g" "$SSH_CONF_DEST"
-    rm -f /etc/ssh/ssh_host_ecdsa_key
-    rm -f /etc/ssh/ssh_host_ecdsa_key.pub
-    rm -f /etc/ssh/ssh_host_rsa_key
-    rm -f /etc/ssh/ssh_host_rsa_key.pub
+    try install -m 644 -o root -g root "$SSH_CONF_SOURCE" "$SSH_CONF_DEST"
+    try sed -i "s/{PORT}/$PORT/g" "$SSH_CONF_DEST"
+    try rm -f /etc/ssh/ssh_host_ecdsa_key
+    try rm -f /etc/ssh/ssh_host_ecdsa_key.pub
+    try rm -f /etc/ssh/ssh_host_rsa_key
+    try rm -f /etc/ssh/ssh_host_rsa_key.pub
 }
 run_and_check "install new sshd configuration" install_sshd
 
@@ -156,15 +149,14 @@ USER_GROUP="$(id -gn "$SECOND_USER")"
 
 # key generation for ssh
 install_sshd_key() {
-    set -e
-    mkdir -p "$SSH_DIR"
-    rm -f "$PRIV_KEY_PATH"
-    ssh-keygen -t ed25519 -N "" -f "$PRIV_KEY_PATH" -q
+    try mkdir -p "$SSH_DIR"
+    try rm -f "$PRIV_KEY_PATH"
+    try ssh-keygen -t ed25519 -N "" -f "$PRIV_KEY_PATH" -q
     PRIV_KEY="$(cat "$PRIV_KEY_PATH")"
-    rm -f "$PRIV_KEY_PATH"
-    chmod 700 "$SSH_DIR"
-    chmod 600 "$PUB_KEY_PATH"
-    chown -R "$SECOND_USER:$USER_GROUP" "$SSH_DIR"
+    try rm -f "$PRIV_KEY_PATH"
+    try chmod 700 "$SSH_DIR"
+    try chmod 600 "$PUB_KEY_PATH"
+    try chown -R "$SECOND_USER:$USER_GROUP" "$SSH_DIR"
 }
 run_and_check "install new sshd keys" install_sshd_key
 
@@ -177,13 +169,14 @@ run_and_check "restart sshd" systemctl restart ssh.socket
 # Install ssh login/logout notify and disable MOTD
 # install log directory
 install_tg_dir() {
-    set -e
-    mkdir -p /var/log/telegram
-    chown telegram-gateway:telegram-gateway "/var/log/telegram"
-    mkdir -p /var/log/service
-    chown telegram-gateway:telegram-gateway "/var/log/service"
-    mkdir -p /usr/local/bin/telegram
-    mkdir -p /usr/local/bin/service
+    try mkdir -p /var/log/telegram
+    try chmod 755 /var/log/telegram
+    try chown telegram-gateway:telegram-gateway "/var/log/telegram"
+    try mkdir -p /var/log/service
+    try chmod 755 /var/log/service
+    try chown telegram-gateway:telegram-gateway "/var/log/service"
+    try mkdir -p /usr/local/bin/telegram
+    try mkdir -p /usr/local/bin/service
 }
 
 run_and_check "creating directory for all telegram script and log" install_tg_dir
@@ -192,10 +185,9 @@ run_and_check "creating directory for all telegram script and log" install_tg_di
 SSH_PAM_NOTIFY_SCRIPT_SOURCE=script/ssh_pam_notify.sh
 SSH_PAM_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_pam_notify.sh"
 install_scr_ssh_pam() {
-    set -e
-    install -m 755 -o root -g root "$SSH_PAM_NOTIFY_SCRIPT_SOURCE" "$SSH_PAM_NOTIFY_SCRIPT_DEST"
+    try install -m 755 -o root -g root "$SSH_PAM_NOTIFY_SCRIPT_SOURCE" "$SSH_PAM_NOTIFY_SCRIPT_DEST"
     if ! grep -q "ssh-pam-telegram-notify" "/etc/pam.d/sshd"; then
-    tee -a /etc/pam.d/sshd > /dev/null <<EOF
+        try tee -a /etc/pam.d/sshd > /dev/null <<EOF
 
 # ssh-pam-telegram-notify
 # Notify for success ssh login and logout via telegram bot
@@ -217,10 +209,9 @@ F2B_CONF_DEST="/etc/fail2ban/jail.local"
 TG_LOCAL_SOURCE="cfg/ssh_telegram.local"
 TG_LOCAL_DEST="/etc/fail2ban/action.d/ssh_telegram.local"
 conf_f2b() {
-    set -e
-    install -m 644 -o root -g root "$F2B_CONF_SOURCE" "$F2B_CONF_DEST"
-    sed -i "s/{PORT}/$PORT/g" "$F2B_CONF_DEST"
-    install -m 644 -o root -g root "$TG_LOCAL_SOURCE" "$TG_LOCAL_DEST"
+    try install -m 644 -o root -g root "$F2B_CONF_SOURCE" "$F2B_CONF_DEST"
+    try sed -i "s/{PORT}/$PORT/g" "$F2B_CONF_DEST"
+    try install -m 644 -o root -g root "$TG_LOCAL_SOURCE" "$TG_LOCAL_DEST"
 }
 run_and_check "install fail2ban configuration" conf_f2b
 
@@ -230,8 +221,8 @@ SSH_F2B_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/ssh_f2b_notify.sh"
 run_and_check "ssh f2b notification script installation" install -m 755 -o root -g root "$SSH_F2B_NOTIFY_SCRIPT_SOURCE" "$SSH_F2B_NOTIFY_SCRIPT_DEST"
 # Start fail2ban
 start_f2b() {
-    systemctl -q enable --now fail2ban.service
-    systemctl restart fail2ban.service
+    try systemctl -q enable --now fail2ban.service
+    try systemctl restart fail2ban.service
 }
 run_and_check "enable and start fail2ban service" start_f2b
 
@@ -240,13 +231,12 @@ run_and_check "enable and start fail2ban service" start_f2b
 modprobe tcp_bbr &>/dev/null || true
 
 bbr_on() {
-    set -e
-    tee /etc/sysctl.d/99-bbr.conf > /dev/null <<'EOF'
+    try tee /etc/sysctl.d/99-bbr.conf > /dev/null <<'EOF'
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 EOF
-    echo "tcp_bbr" > /etc/modules-load.d/bbr.conf
-    sysctl --system &> /dev/null
+    try echo "tcp_bbr" > /etc/modules-load.d/bbr.conf
+    try sysctl --system &> /dev/null
 }
 
 # check availability
@@ -254,7 +244,7 @@ BBR_AVAILABLE="$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null
 if ! grep -qw bbr <<<"$BBR_AVAILABLE"; then
     echo "⚠️  Non-critical error: BBR not available (net.ipv4.tcp_available_congestion_control = '${BBR_AVAILABLE}')"
 else
-    run_and_check "enable bbr" bbr_on
+    run_and_check "enable BBR" bbr_on
     
 fi
 
@@ -262,25 +252,23 @@ fi
 install_with_retry "install unattended upgrades package" apt-get install -y unattended-upgrades
 
 conf_un_up() {
-    set -e
-    tee /etc/apt/apt.conf.d/20auto-upgrades > /dev/null <<'EOF'
+    try tee /etc/apt/apt.conf.d/20auto-upgrades > /dev/null <<'EOF'
 APT::Periodic::Update-Package-Lists "0";
 APT::Periodic::Unattended-Upgrade "0";
 EOF
-    systemctl disable --now apt-daily.timer apt-daily-upgrade.timer
+    try systemctl disable --now apt-daily.timer apt-daily-upgrade.timer > /dev/null
 }
 run_and_check "changing unattended upgrades settings" conf_un_up
 
 UNATTENDED_UPGRADE_SCRIPT_SOURCE="script/unattended_upgrade.sh"
 UNATTENDED_UPGRADE_SCRIPT_DEST="/usr/local/bin/service/unattended_upgrade.sh"
 un_up_scr() {
-    set -e
-    install -m 755 -o root -g root "$UNATTENDED_UPGRADE_SCRIPT_SOURCE" "$UNATTENDED_UPGRADE_SCRIPT_DEST"
-    tee /etc/cron.d/unattended-upgrade > /dev/null <<EOF
+    try install -m 755 -o root -g root "$UNATTENDED_UPGRADE_SCRIPT_SOURCE" "$UNATTENDED_UPGRADE_SCRIPT_DEST"
+    try tee /etc/cron.d/unattended-upgrade > /dev/null <<EOF
 SHELL=/bin/bash
 1 3 1 * * root "$UNATTENDED_UPGRADE_SCRIPT_DEST" &> /dev/null
 EOF
-    chmod 644 "/etc/cron.d/unattended-upgrade"
+    try chmod 644 "/etc/cron.d/unattended-upgrade"
 }
 run_and_check "security update script installation" un_up_scr
 
@@ -290,9 +278,8 @@ BOOT_SCRIPT_SOURCE="script/boot_notify.sh"
 BOOT_SCRIPT_DEST="/usr/local/bin/telegram/boot_notify.sh"
 
 install_scr_boot() {
-    set -e
-    install -m 755 -o root -g root "$BOOT_SCRIPT_SOURCE" "$BOOT_SCRIPT_DEST"
-    tee /etc/systemd/system/boot_notify.service > /dev/null <<EOF
+    try install -m 755 -o root -g root "$BOOT_SCRIPT_SOURCE" "$BOOT_SCRIPT_DEST"
+    try tee /etc/systemd/system/boot_notify.service > /dev/null <<EOF
 [Unit]
 Description=Telegram notify after boot
 Wants=network-online.target
@@ -308,8 +295,8 @@ ExecStart=$BOOT_SCRIPT_DEST
 [Install]
 WantedBy=multi-user.target
 EOF
-    systemctl daemon-reload
-    systemctl -q enable boot_notify.service
+    try systemctl daemon-reload
+    try systemctl -q enable boot_notify.service
 }
 
 run_and_check "server boot notification script installation" install_scr_boot
@@ -324,12 +311,14 @@ else
 fi
 
 install_xray_dir() {
-    set -e
-    mkdir -p /usr/local/share/xray
-    mkdir -p /usr/local/etc/xray
-    chown xray:telegram-gateway /usr/local/etc/xray
-    mkdir -p /var/log/xray
-    chown xray:telegram-gateway /var/log/xray
+    try mkdir -p /usr/local/share/xray
+    try chmod 755 /usr/local/share/xray
+    try mkdir -p /usr/local/etc/xray
+    try chmod 770 /usr/local/etc/xray
+    try chown xray:telegram-gateway /usr/local/etc/xray
+    try mkdir -p /var/log/xray
+    try chmod 770 /var/log/xray
+    try chown xray:telegram-gateway /var/log/xray
     TMP_DIR="$(mktemp -d)"
     readonly TMP_DIR
 }
@@ -485,8 +474,7 @@ XRAY_CONFIG_SRC="cfg/config.json"
 XRAY_CONFIG_DEST="/usr/local/etc/xray/config.json"
 
 conf_xray() {
-    set -e
-    tee /etc/systemd/system/xray.service > /dev/null <<EOF
+    try tee /etc/systemd/system/xray.service > /dev/null <<EOF
 [Unit]
 Description=Xray-core VLESS server
 After=network-online.target
@@ -528,11 +516,12 @@ conf_json_xray() {
 
     # make tmp file
     TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
-    chmod 644 "$TMP_XRAY_CONFIG"
+    try chmod 660 "$TMP_XRAY_CONFIG"
+    try chown xray:xray "$TMP_XRAY_CONFIG"
     trap 'rm -rf "$TMP_XRAY_CONFIG" "$TMP_DIR"' EXIT
     
 # update json
-    jq --arg dest "$DEST" \
+    try jq --arg dest "$DEST" \
         --arg sni  "$XRAY_HOST" \
         --arg pk   "$privateKey" \
         --arg sid  "$shortId" '
@@ -567,13 +556,12 @@ XRAY_SCRIPT_SOURCE="script/xray_update.sh"
 XRAY_SCRIPT_DEST="/usr/local/bin/service/xray_update.sh"
 
 install_scr_xr_up() {
-    set -e
-    install -m 755 -o root -g root "$XRAY_SCRIPT_SOURCE" "$XRAY_SCRIPT_DEST"
-    tee /etc/cron.d/xray_update > /dev/null <<EOF
+    try install -m 755 -o root -g root "$XRAY_SCRIPT_SOURCE" "$XRAY_SCRIPT_DEST"
+    try tee /etc/cron.d/xray_update > /dev/null <<EOF
 SHELL=/bin/bash
 1 2 1 * * root "$XRAY_SCRIPT_DEST" &> /dev/null
 EOF
-    chmod 644 "/etc/cron.d/xray_update"
+    try chmod 644 "/etc/cron.d/xray_update"
 }
 run_and_check "xray and geo*.dat update script installation" install_scr_xr_up
 
@@ -583,13 +571,12 @@ XRAY_STAT_SCRIPT_SRC="script/xray_stat.sh"
 XRAY_STAT_SCRIPT_DEST="/usr/local/bin/service/xray_stat.sh"
 
 install_scr_xray_stat() {
-    set -e
-    install -m 755 -o root -g root "$XRAY_STAT_SCRIPT_SRC" "$XRAY_STAT_SCRIPT_DEST"
-    tee /etc/cron.d/xray_stat > /dev/null <<EOF
+    try install -m 755 -o root -g root "$XRAY_STAT_SCRIPT_SRC" "$XRAY_STAT_SCRIPT_DEST"
+    try tee /etc/cron.d/xray_stat > /dev/null <<EOF
 SHELL=/bin/bash
 0 * * * * telegram-gateway "$XRAY_STAT_SCRIPT_DEST" &> /dev/null
 EOF
-    chmod 644 "/etc/cron.d/xray_stat"
+    try chmod 644 "/etc/cron.d/xray_stat"
 }
 run_and_check "xray statistic script installation" install_scr_xray_stat
 
@@ -598,13 +585,12 @@ run_and_check "xray statistic script installation" install_scr_xray_stat
 USER_NOTIFY_SCRIPT_SOURCE="script/user_notify.sh"
 USER_NOTIFY_SCRIPT_DEST="/usr/local/bin/telegram/user_notify.sh"
 install_scr_user() {
-    set -e
-    install -m 755 -o root -g root "$USER_NOTIFY_SCRIPT_SOURCE" "$USER_NOTIFY_SCRIPT_DEST"
-    tee /etc/cron.d/user_notify > /dev/null <<EOF
+    try install -m 755 -o root -g root "$USER_NOTIFY_SCRIPT_SOURCE" "$USER_NOTIFY_SCRIPT_DEST"
+    try tee /etc/cron.d/user_notify > /dev/null <<EOF
 SHELL=/bin/bash
 1 1 * * * telegram-gateway "$USER_NOTIFY_SCRIPT_DEST" &> /dev/null
 EOF
-    chmod 644 "/etc/cron.d/user_notify"
+    try chmod 644 "/etc/cron.d/user_notify"
 }
 run_and_check "user daily report script installation" install_scr_user
 
@@ -613,13 +599,12 @@ run_and_check "user daily report script installation" install_scr_user
 AUTOBLOCK_SCRIPT_SOURCE="script/autoblock.sh"
 AUTOBLOCK_SCRIPT_DEST="/usr/local/bin/service/autoblock.sh"
 install_scr_autoblock() {
-    set -e
-    install -m 755 -o root -g root "$AUTOBLOCK_SCRIPT_SOURCE" "$AUTOBLOCK_SCRIPT_DEST"
-    tee /etc/cron.d/autoblock > /dev/null <<EOF
+    try install -m 755 -o root -g root "$AUTOBLOCK_SCRIPT_SOURCE" "$AUTOBLOCK_SCRIPT_DEST"
+    try tee /etc/cron.d/autoblock > /dev/null <<EOF
 SHELL=/bin/bash
 1 0 * * * telegram-gateway "$AUTOBLOCK_SCRIPT_DEST" &> /dev/null
 EOF
-    chmod 644 "/etc/cron.d/autoblock"
+    try chmod 644 "/etc/cron.d/autoblock"
 }
 run_and_check "autoblock exp user script installation" install_scr_autoblock
 
@@ -628,13 +613,12 @@ run_and_check "autoblock exp user script installation" install_scr_autoblock
 XRAY_BACKUP_SCRIPT_SOURCE="script/xray_backup.sh"
 XRAY_BACKUP_SCRIPT_DEST="/usr/local/bin/service/xray_backup.sh"
 install_scr_xray_backup() {
-    set -e
-    install -m 755 -o root -g root "$XRAY_BACKUP_SCRIPT_SOURCE" "$XRAY_BACKUP_SCRIPT_DEST"
-    tee /etc/cron.d/xray_backup > /dev/null <<'EOF'
+    try install -m 755 -o root -g root "$XRAY_BACKUP_SCRIPT_SOURCE" "$XRAY_BACKUP_SCRIPT_DEST"
+    try tee /etc/cron.d/xray_backup > /dev/null <<'EOF'
 SHELL=/bin/bash
 0 23 28-31 * * telegram-gateway [ "$(date -d tomorrow +\%d)" = "01" ] && "/usr/local/bin/service/xray_backup.sh" &> /dev/null
 EOF
-    chmod 644 "/etc/cron.d/xray_backup"
+    try chmod 644 "/etc/cron.d/xray_backup"
 }
 run_and_check "xray backup script installation" install_scr_xray_backup
 
@@ -656,23 +640,22 @@ URI_PATH="/usr/local/etc/xray/URI_DB"
 
 # add link for maintance
 install_scr_service() {
-    set -e
-    install -m 755 -o root -g root "$USERADD_SCRIPT_SRC" "$USERADD_SCRIPT_DEST"
-    install -m 755 -o root -g root "$USERDEL_SCRIPT_SRC" "$USERDEL_SCRIPT_DEST"
-    install -m 755 -o root -g root "$USEREXP_SCRIPT_SRC" "$USEREXP_SCRIPT_DEST"
-    install -m 755 -o root -g root "$USERBLOCK_SCRIPT_SRC" "$USERBLOCK_SCRIPT_DEST"
-    install -m 755 -o root -g root "$USERSHOW_SCRIPT_SRC" "$USERSHOW_SCRIPT_DEST"
-    install -m 755 -o root -g root "$SYS_INFO_SCRIPT_SRC" "$SYS_INFO_SCRIPT_DEST"
-    touch "$URI_PATH"
-    chmod 600 "$URI_PATH"
-    chown telegram-gateway:telegram-gateway "$URI_PATH"
-    ln -sfn "$USERADD_SCRIPT_DEST" "$USER_HOME/xray_user_add"
-    ln -sfn "$USERDEL_SCRIPT_DEST" "$USER_HOME/xray_user_del"
-    ln -sfn "$USEREXP_SCRIPT_DEST" "$USER_HOME/xray_user_exp"
-    ln -sfn "$USERBLOCK_SCRIPT_DEST" "$USER_HOME/xray_user_block"
-    ln -sfn "$USERSHOW_SCRIPT_DEST" "$USER_HOME/xray_user_show"
+    try install -m 755 -o root -g root "$USERADD_SCRIPT_SRC" "$USERADD_SCRIPT_DEST"
+    try install -m 755 -o root -g root "$USERDEL_SCRIPT_SRC" "$USERDEL_SCRIPT_DEST"
+    try install -m 755 -o root -g root "$USEREXP_SCRIPT_SRC" "$USEREXP_SCRIPT_DEST"
+    try install -m 755 -o root -g root "$USERBLOCK_SCRIPT_SRC" "$USERBLOCK_SCRIPT_DEST"
+    try install -m 755 -o root -g root "$USERSHOW_SCRIPT_SRC" "$USERSHOW_SCRIPT_DEST"
+    try install -m 755 -o root -g root "$SYS_INFO_SCRIPT_SRC" "$SYS_INFO_SCRIPT_DEST"
+    try touch "$URI_PATH"
+    try chmod 600 "$URI_PATH"
+    try chown telegram-gateway:telegram-gateway "$URI_PATH"
+    try ln -sfn "$USERADD_SCRIPT_DEST" "$USER_HOME/xray_user_add"
+    try ln -sfn "$USERDEL_SCRIPT_DEST" "$USER_HOME/xray_user_del"
+    try ln -sfn "$USEREXP_SCRIPT_DEST" "$USER_HOME/xray_user_exp"
+    try ln -sfn "$USERBLOCK_SCRIPT_DEST" "$USER_HOME/xray_user_block"
+    try ln -sfn "$USERSHOW_SCRIPT_DEST" "$USER_HOME/xray_user_show"
 
-    find "$USER_HOME" -type l -exec chown -h $SECOND_USER:$SECOND_USER {} +
+    try find "$USER_HOME" -type l -exec chown -h $SECOND_USER:$SECOND_USER {} +
 }
 run_and_check "install service script and create link in home directory" install_scr_service
 
@@ -683,9 +666,8 @@ TG_GATEWAY_SCRIPT_DEST="/usr/local/bin/service/telegram-gateway.sh"
 
 # /etc/systemd/system/telegram-gateway.service
 conf_tg_gateway() {
-    set -e
-    install -m 755 -o root -g root "$TG_GATEWAY_SCRIPT_SRC" "$TG_GATEWAY_SCRIPT_DEST"
-    tee /etc/systemd/system/telegram-gateway.service > /dev/null <<EOF
+    try install -m 755 -o root -g root "$TG_GATEWAY_SCRIPT_SRC" "$TG_GATEWAY_SCRIPT_DEST"
+    try tee /etc/systemd/system/telegram-gateway.service > /dev/null <<EOF
 [Unit]
 Description=Telegram gateway bot
 After=network-online.target
@@ -715,7 +697,7 @@ SystemCallArchitectures=native
 WantedBy=multi-user.target
 EOF
 
-    tee /etc/polkit-1/rules.d/50-telegram-gateway.rules > /dev/null <<'EOF'
+    try tee /etc/polkit-1/rules.d/50-telegram-gateway.rules > /dev/null <<'EOF'
 polkit.addRule(function(action, subject) {
   // Разрешаем пользователю telegram-gateway только restart для xray.service
     if (subject.user === "telegram-gateway" &&
@@ -743,7 +725,7 @@ run_and_check "start Telegram gateway service" systemctl start telegram-gateway.
 
 
 # add user for xray
-sudo -u telegram-gateway script/useradd.sh "$XRAY_NAME" "$XRAY_DAYS" 1
+sudo -u telegram-gateway "$USERADD_SCRIPT_DEST" "$XRAY_NAME" "$XRAY_DAYS" 1
 
 
 # final output

@@ -102,6 +102,7 @@ MESSAGE="⚠️ <b>Scheduled security upgrade</b>
 
 echo "########## collected message - $DATE_MESSAGE ##########"
 echo "$MESSAGE"
+
 telegram_message
 
 update_and_upgrade() {
@@ -176,10 +177,10 @@ CHANGES="$(awk -v d="$TODAY" '
   }' /var/log/dpkg.log || true)"
 
 if [[ -z "$CHANGES" ]]; then
-  CHANGE_SUMMARY="➖ No package changes"
+    CHANGE_SUMMARY="➖ No package changes"
 else
-  COUNT="$(printf "%s\n" "$CHANGES" | wc -l)"
-  CHANGE_SUMMARY="➕ $COUNT package changed:
+    COUNT="$(printf "%s\n" "$CHANGES" | wc -l)"
+    CHANGE_SUMMARY="➕ $COUNT package changed:
 $CHANGES"
 fi
 

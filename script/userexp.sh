@@ -18,6 +18,11 @@ readonly LOCK_FILE_2="/run/lock/uri_db.lock"
 exec 9> "$LOCK_FILE_2" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_2', exit"; exit 1; }
 flock -n 9 || { echo "❌ Error: another instance working on '$LOCK_FILE_2', exit"; exit 1; }
 
+# prevents attempts to restart via this script while the update is in progress
+readonly LOCK_FILE_4="/run/lock/xray_update.lock"
+exec 99> "$LOCK_FILE_4" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_4', exit"; exit 1; }
+flock -n 99 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+
 # main variables
 readonly XRAY_CONFIG="/usr/local/etc/xray/config.json"
 readonly URI_FILE="/usr/local/etc/xray/URI_DB"
@@ -27,7 +32,6 @@ readonly INBOUND_TAG="Vless"
 readonly BLOCK_RULE_TAG="autoblock-expired-users"
 readonly USERNAME="$1"
 DAYS="$2"
-umask 022
 
 # argument check
 if [[ "$#" -ne 2 ]]; then
@@ -57,19 +61,13 @@ if [[ ! -r "$URI_FILE" || ! -w "$URI_FILE" ]]; then
     exit 1
 fi
 
-# function error helper
+# helper func
+try() { "$@" || return 1; }
+
 run_and_check() {
-    local action="$1"
+    action="$1"
     shift 1
-    "$@" > /dev/null
-    rc=$?
-    if [[ $rc == 0 ]]; then
-        echo "✅ Success: $action"
-        return 0
-    else
-        echo "❌ Error: $action, exit"
-        exit 1
-    fi
+    "$@" > /dev/null && echo "✅ Success: $action" || { echo "❌ Error: $action, exit"; exit 1; }
 }
 
 # calculate new today and exp day
@@ -131,16 +129,14 @@ fi
 
 # main func for renew email and deleting from block rule
 unblock_and_add_time() {
-    set -e
-
     # make tmp file
     TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
-    chmod 644 "$TMP_XRAY_CONFIG"
+    try chmod 644 "$TMP_XRAY_CONFIG"
     
     # set trap for deleting tmp files
     trap 'rm -f "$TMP_XRAY_CONFIG"' EXIT
 
-jq \
+try jq \
   --arg inboundTag "$INBOUND_TAG" \
   --arg ruleTag "$BLOCK_RULE_TAG" \
   --arg name "$USERNAME" \
@@ -176,7 +172,7 @@ jq \
 ' "$XRAY_CONFIG" > "$TMP_XRAY_CONFIG"
 
     # backup
-    cp -a "$XRAY_CONFIG" "$XRAY_BACKUP_PATH"
+    try cp -a "$XRAY_CONFIG" "$XRAY_BACKUP_PATH"
 
 }
 
@@ -191,7 +187,7 @@ if cmp -s "$XRAY_CONFIG" "$TMP_XRAY_CONFIG"; then
     exit 1
 fi
 
-run_and_check "install new xray config" install -m 600 -o xray -g telegram-gateway "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "install new xray config" cat "$TMP_XRAY_CONFIG" > "$XRAY_CONFIG"
 run_and_check "delete temporary xray files " rm -f "$TMP_XRAY_CONFIG"
 
 # unset trap, tmp already deleted
@@ -211,8 +207,6 @@ fi
 echo "✅ Success: Backup saved $XRAY_BACKUP_PATH"
 
 update_uri_db() {
-    set -e
-
     # make tmp file
     TMP_URI_FILE="$(mktemp --suffix=.json)"
 
@@ -226,7 +220,7 @@ update_uri_db() {
     fi
 
   # renew only one sring created/days/expiration, not change other
-    awk -v n="$USERNAME" -v today="$TODAY" -v days="$DAYS" -v expiration="$EXP" '
+    try awk -v n="$USERNAME" -v today="$TODAY" -v days="$DAYS" -v expiration="$EXP" '
         $0 ~ ("^name: " n ", created: ") {
         print "name: " n ", created: " today ", days: " days ", expiration: " expiration
         next
@@ -235,10 +229,10 @@ update_uri_db() {
     ' "$URI_FILE" > "$TMP_URI_FILE"
 
     # backup
-    cp -a "$URI_FILE" "$URI_BACKUP_PATH"
+    try cp -a "$URI_FILE" "$URI_BACKUP_PATH"
 
     # write from tmp to uri
-    install -m 600 -o telegram-gateway -g telegram-gateway "$TMP_URI_FILE" "$URI_FILE"
+    try cat "$TMP_URI_FILE" > "$URI_FILE"
 
 }
 

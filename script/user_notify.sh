@@ -25,11 +25,11 @@ echo "########## user notify started - $DATE_START ##########"
 RC="1"
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
-        local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## user notify ended - $DATE_END ##########"
+        local date_end="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## user notify ended - $date_end ##########"
     else
-        local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## user notify failed - $DATE_FAIL ##########"
+        local date_fail="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## user notify failed - $date_fail ##########"
     fi
 }
 
@@ -43,6 +43,7 @@ readonly TR_DB_Y="/var/log/xray/TR_DB_Y"
 readonly INBOUND_TAG="Vless"
 readonly HOSTNAME="$(hostname)"
 readonly MAX_ATTEMPTS="3"
+readonly WAIT_SEC="$(shuf -i "10-60" -n 1)"
 
 # check xray conf
 if [[ ! -r "$XRAY_CONFIG" ]]; then
@@ -64,38 +65,34 @@ source "$ENV_FILE"
 # check id from secret file
 [[ -z "$CHAT_ID" ]] && { echo "❌ Error: Telegram chat ID is missing in '$ENV_FILE', exit"; exit 1; }
 
-# check another instanсe of the script is not running
+# check another instanсe of the script is not running (with retries)
 readonly LOCK_FILE="/run/lock/xray_config.lock"
 exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-# check another instance is not running (with retries)
-wait_sec=10
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   if flock -n 8; then
     break
   fi
 
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-    echo "❌ Error: Lock busy ($LOCK_FILE). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
-    sleep "$wait_sec"
+    echo "❌ Error: Lock busy ($LOCK_FILE). Waiting ${WAIT_SEC}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$WAIT_SEC"
   else
     echo "❌ Error: lock ($LOCK_FILE) is still busy after $MAX_ATTEMPTS attempts, exit"
     exit 1
   fi
 done
 
-# check another instanсe of the script is not running
+# check another instanсe of the script is not running (with retries)
 readonly LOCK_FILE_3="/run/lock/tr_db.lock"
 exec 10> "$LOCK_FILE_3" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_3', exit"; exit 1; }
-# check another instance is not running (with retries)
-wait_sec=10
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   if flock -n 10; then
     break
   fi
 
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-    echo "❌ Error: Lock busy ($LOCK_FILE_3). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
-    sleep "$wait_sec"
+    echo "❌ Error: Lock busy ($LOCK_FILE_3). Waiting ${WAIT_SEC}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$WAIT_SEC"
   else
     echo "❌ Error: lock ($LOCK_FILE_3) is still busy after $MAX_ATTEMPTS attempts, exit"
     exit 1
@@ -135,9 +132,10 @@ telegram_message() {
 }
 
 # reset traffic 1 day of month and year
-RESET_ARG_M=""
+RESET_ARG_M="0"
 [[ "$(date +%d)" = "01" ]] && RESET_ARG_M="1"
 
+RESET_ARG_Y="0"
 [[ "$(date +%j)" = "001" ]] && RESET_ARG_Y="1"
 
 # get stat json

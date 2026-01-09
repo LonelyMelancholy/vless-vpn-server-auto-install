@@ -43,6 +43,16 @@ readonly TR_DB_M="/var/log/xray/TR_DB_M"
 readonly MANUAL_BLOCK_TAG="manual-block-users"
 readonly AUTO_BLOCK_TAG="autoblock-expired-users"
 
+if [[ ! -r "$URI_PATH" ]]; then
+    echo "❌ Error: check $URI_PATH it's missing or you do not have read permissions, exit"
+    exit 1
+fi
+
+if [[ ! -r "$XRAY_CONFIG" ]]; then
+    echo "❌ Error: check $XRAY_CONFIG it's missing or you do not have read permissions, exit"
+    exit 1
+fi
+
 # global (script-wide) storage for the "all" option
 declare -A USER_SET=()
 declare -A DAYS_LEFT_BY_USER=()
@@ -242,20 +252,12 @@ print_all_table() {
 
 case "$OPTION" in
   links)
-    if [[ ! -r "$URI_PATH" ]]; then
-      echo "❌ Error: check $URI_PATH it's missing or you do not have read permissions, exit"
-      exit 1
-    fi
     # just print database (without last empty string)
     sed -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}' "$URI_PATH"
     exit 0
   ;;
 
   all)
-    if [[ ! -r "$XRAY_CONFIG" ]]; then
-      echo "❌ Error: check $XRAY_CONFIG it's missing or you do not have read permissions, exit"
-      exit 1
-    fi
     print_all_table
     exit 0
   ;;

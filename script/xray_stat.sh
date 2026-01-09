@@ -25,31 +25,30 @@ echo "########## xray stat started - $DATE_START ##########"
 RC="1"
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
-        local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## xray stat ended - $DATE_END ##########"
+        local date_end="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## xray stat ended - $date_end ##########"
     else
-        local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## xray stat failed - $DATE_FAIL ##########"
+        local date_fail="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## xray stat failed - $date_fail ##########"
     fi
 }
 
 # trap for the end log message for the end log
 trap 'on_exit' EXIT
+readonly WAIT_SEC="$(shuf -i "10-60" -n 1)"
 
-# check another instanсe of the script is not running
+# check another instanсe of the script is not running (with retries)
 readonly LOCK_FILE_3="/run/lock/tr_db.lock"
 exec 10> "$LOCK_FILE_3" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_3', exit"; exit 1; }
-# check another instance is not running (with retries)
-wait_sec=10
 readonly MAX_ATTEMPTS="3"
-for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
   if flock -n 10; then
     break
   fi
 
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-    echo "❌ Error: Lock busy ($LOCK_FILE_3). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
-    sleep "$wait_sec"
+    echo "❌ Error: Lock busy ($LOCK_FILE_3). Waiting ${WAIT_SEC}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$WAIT_SEC"
   else
     echo "❌ Error: lock ($LOCK_FILE_3) is still busy after $MAX_ATTEMPTS attempts, exit"
     exit 1
@@ -57,16 +56,12 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
 done
 
 # helper func
+try() { "$@" || return 1; }
+
 run_and_check() {
-    local action="$1"
+    action="$1"
     shift 1
-    if "$@" > /dev/null; then
-        echo "✅ Success: $action"
-        return 0
-    else
-        echo "❌ Error: $action, exit"
-        exit 1
-    fi
+    "$@" > /dev/null && echo "✅ Success: $action" || { echo "❌ Error: $action, exit"; exit 1; }
 }
 
 # main variable
@@ -102,21 +97,24 @@ fi
 
 # if old M empty or not valid, start stat from 0
 if [[ -s "$OUT_FILE_M" ]] && jq -e . &> /dev/null < "$OUT_FILE_M"; then
-  cp -f "$OUT_FILE_M" "$TMP_OLD_M"
+    cp -f "$OUT_FILE_M" "$TMP_OLD_M"
 else
-  printf '{"stat":[]}\n' >"$TMP_OLD_M"
+    printf '{"stat":[]}\n' >"$TMP_OLD_M"
+    touch "$OUT_FILE_M"
+    chmod 600 "$OUT_FILE_M"
 fi
 
 # if old Y empty or not valid, start stat from 0
 if [[ -s "$OUT_FILE_Y" ]] && jq -e . &> /dev/null < "$OUT_FILE_Y"; then
-  cp -f "$OUT_FILE_Y" "$TMP_OLD_Y"
+    cp -f "$OUT_FILE_Y" "$TMP_OLD_Y"
 else
-  printf '{"stat":[]}\n' >"$TMP_OLD_Y"
+    printf '{"stat":[]}\n' >"$TMP_OLD_Y"
+    touch "$OUT_FILE_Y"
+    chmod 600 "$OUT_FILE_Y"
 fi
 
 # merge old + new -> TMP_OUT_*
 merge_old_new() {
-    set -e
 jq -s '
   def to_int:
     if . == null then 0
@@ -159,7 +157,8 @@ run_and_check "start merge tmp_m file" merge_old_new "$TMP_OLD_M" "$TMP_NEW_COMM
 run_and_check "start merge tmp_y file" merge_old_new "$TMP_OLD_Y" "$TMP_NEW_COMMON" "$TMP_OUT_Y"
 
 # install new TR_DB
-run_and_check "install new TR_DB_M file" install -m 644 -o telegram-gateway -g telegram-gateway "$TMP_OUT_M" "$OUT_FILE_M"
-run_and_check "install new TR_DB_Y file" install -m 644 -o telegram-gateway -g telegram-gateway "$TMP_OUT_Y" "$OUT_FILE_Y"
+run_and_check "install new TR_DB_M file" cat "$TMP_OUT_M" > "$OUT_FILE_M"
+run_and_check "install new TR_DB_Y file" cat "$TMP_OUT_Y" > "$OUT_FILE_Y"
 
 RC=0
+exit $RC

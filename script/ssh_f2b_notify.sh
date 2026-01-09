@@ -43,11 +43,11 @@ echo "########## ssh fail2ban notify started - $DATE_START ##########"
 RC="1"
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
-        local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## ssh fail2ban notify ended - $DATE_END ##########"
+        local date_end="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## ssh fail2ban notify ended - $date_end ##########"
     else
-        local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## ssh fail2ban notify failed - $DATE_FAIL ##########"
+        local date_fail="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## ssh fail2ban notify failed - $date_fail ##########"
     fi
 }
 
@@ -117,7 +117,7 @@ telegram_message() {
         if ! _tg_m; then
             if [[ "$attempt" -ge "$MAX_ATTEMPTS" ]]; then
                 echo "❌ Error: failed to send Telegram message after $attempt attempt, exit"
-                return 1
+                exit 1
             fi
             sleep 60
             ((attempt++))

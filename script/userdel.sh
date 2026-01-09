@@ -18,6 +18,11 @@ readonly LOCK_FILE_2="/run/lock/uri_db.lock"
 exec 9> "$LOCK_FILE_2" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
 flock -n 9 || { echo "❌ Error: another instance working on '$LOCK_FILE', exit"; exit 1; }
 
+# prevents attempts to restart via this script while the update is in progress
+readonly LOCK_FILE_4="/run/lock/xray_update.lock"
+exec 99> "$LOCK_FILE_4" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_4', exit"; exit 1; }
+flock -n 99 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+
 # argument check
 if [[ "$#" -ne 1 ]]; then
     echo "Use for del user in xray config, run: $0 <username>"
@@ -51,17 +56,13 @@ if [[ ! $USERNAME =~ ^[A-Za-z0-9-]+$ ]]; then
     exit 1
 fi
 
-# function error helper
+# helper func
+try() { "$@" || return 1; }
+
 run_and_check() {
-    local action="$1"
+    action="$1"
     shift 1
-    if "$@" > /dev/null; then
-        echo "✅ Success: $action"
-        return 0
-    else
-        echo "❌ Error: $action, exit"
-        exit 1
-    fi
+    "$@" > /dev/null && echo "✅ Success: $action" || { echo "❌ Error: $action, exit"; exit 1; }
 }
 
 # count clients var for jd
@@ -90,19 +91,18 @@ if [[ "$BEFORE" -eq 0 ]]; then
 fi
 
 xray_userdel() {
-    set -e
     # backup
-    cp -a "$XRAY_CONFIG" "$BACKUP_PATH"
+    try cp -a "$XRAY_CONFIG" "$BACKUP_PATH"
     
     # make tmp file
     readonly TMP_XRAY_CONFIG="$(mktemp --suffix=.json)"
-    chmod 644 "$TMP_XRAY_CONFIG"
+    try chmod 644 "$TMP_XRAY_CONFIG"
     
     # set trap for tmp file
     trap 'rm -f "$TMP_XRAY_CONFIG" "$TMP_URI"' EXIT
 
     # delete user and add to tmp conf (also clear from block rules)
-    jq --arg t "$USERNAME" --arg tag "$INBOUND_TAG" '
+    try jq --arg t "$USERNAME" --arg tag "$INBOUND_TAG" '
         def base: split("|")[0];
 
         # remove from inbound clients (by email base part before "|")
@@ -158,7 +158,7 @@ xray_userdel() {
 # del user, check config, install if config valid and delete tmp files, restart xray
 run_and_check "delete xray user" xray_userdel
 run_and_check "xray config checking" xray run -test -config "$TMP_XRAY_CONFIG"
-run_and_check "install new xray config" install -m 600 -o xray -g telegram-gateway "$TMP_XRAY_CONFIG" "$XRAY_CONFIG"
+run_and_check "install new xray config" cat "$TMP_XRAY_CONFIG" > "$XRAY_CONFIG"
 run_and_check "restart xray service" systemctl restart xray.service
 
 # echo result
@@ -174,7 +174,7 @@ fi
 if [[ "$REMOVED" -gt 0 && -f "$URI_PATH" ]]; then
     uri_userdel() {
         # backup
-        cp -a "$URI_PATH" "$URI_BAK"
+        try cp -a "$URI_PATH" "$URI_BAK"
 
         # create tmp file
         readonly TMP_URI="$(mktemp)"
@@ -183,7 +183,7 @@ if [[ "$REMOVED" -gt 0 && -f "$URI_PATH" ]]; then
         trap 'rm -f "$TMP_XRAY_CONFIG" "$TMP_URI"' EXIT
 
         # paste in tmp file without username
-        awk -v t="$USERNAME" '
+        try awk -v t="$USERNAME" '
             BEGIN { skipping=0 }
             $0 ~ ("^name:[ \t]*" t "([ \t,].*|$)") {
                 skipping=1
@@ -197,7 +197,7 @@ if [[ "$REMOVED" -gt 0 && -f "$URI_PATH" ]]; then
         ' "$URI_PATH" > "$TMP_URI"
 
         # write from tmp to uri
-        install -m 600 -o telegram-gateway -g telegram-gateway "$TMP_URI" "$URI_PATH"
+        try cat "$TMP_URI" > "$URI_PATH"
     }
 
     run_and_check "clear user from URI database" uri_userdel

@@ -26,74 +26,69 @@ echo "########## backup started - $DATE_START ##########"
 RC="1"
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
-        local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## backup ended - $DATE_END ##########"
+        local date_end="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## backup ended - $date_end ##########"
     else
-        local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## backup failed - $DATE_FAIL ##########"
+        local date_fail="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## backup failed - $date_fail ##########"
     fi
 }
 
 # trap for the end log message for the end log
 trap 'on_exit' EXIT
+readonly WAIT_SEC="$(shuf -i "10-60" -n 1)"
 
 # check another instanсe of the script is not running
 readonly LOCK_FILE="/run/lock/backup.lock"
 exec 99> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
 flock -n 99 || { echo "❌ Error: another instance working on backup, exit"; exit 1; }
 
-# check another instanсe of the script is not running
+# check another instanсe of the script is not running (with retries)
 readonly LOCK_FILE="/run/lock/xray_config.lock"
 exec 8> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-# check another instance is not running (with retries)
-wait_sec=10
 readonly MAX_ATTEMPTS="3"
-for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
   if flock -n 8; then
     break
   fi
 
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-    echo "❌ Error: Lock busy ($LOCK_FILE). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
-    sleep "$wait_sec"
+    echo "❌ Error: Lock busy ($LOCK_FILE). Waiting ${WAIT_SEC}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$WAIT_SEC"
   else
     echo "❌ Error: lock ($LOCK_FILE) is still busy after $MAX_ATTEMPTS attempts, exit"
     exit 1
   fi
 done
 
-# check another instanсe of the script is not running
+# check another instanсe of the script is not running (with retries)
 readonly LOCK_FILE_2="/run/lock/uri_db.lock"
 exec 9> "$LOCK_FILE_2" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_2', exit"; exit 1; }
-# check another instance is not running (with retries)
-wait_sec=10
-for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
   if flock -n 9; then
     break
   fi
 
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-    echo "❌ Error: Lock busy ($LOCK_FILE_2). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
-    sleep "$wait_sec"
+    echo "❌ Error: Lock busy ($LOCK_FILE_2). Waiting ${WAIT_SEC}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$WAIT_SEC"
   else
     echo "❌ Error: lock ($LOCK_FILE_2) is still busy after $MAX_ATTEMPTS attempts, exit"
     exit 1
   fi
 done
 
-# check another instanсe of the script is not running
+# check another instanсe of the script is not running (with retries)
 readonly LOCK_FILE_3="/run/lock/tr_db.lock"
 exec 10> "$LOCK_FILE_3" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_3', exit"; exit 1; }
-# check another instance is not running (with retries)
-wait_sec=10
-for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
   if flock -n 10; then
     break
   fi
 
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
-    echo "❌ Error: Lock busy ($LOCK_FILE_3). Waiting ${wait_sec}s... (attempt $attempt/$MAX_ATTEMPTS)"
-    sleep "$wait_sec"
+    echo "❌ Error: Lock busy ($LOCK_FILE_3). Waiting ${WAIT_SEC}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$WAIT_SEC"
   else
     echo "❌ Error: lock ($LOCK_FILE_3) is still busy after $MAX_ATTEMPTS attempts, exit"
     exit 1

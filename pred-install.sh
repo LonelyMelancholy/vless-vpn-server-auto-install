@@ -43,10 +43,14 @@ CFG_CHECK="module/cfg_check.sh"
 source "$CFG_CHECK"
 
 # hostname change
-if hostnamectl set-hostname "$NEW_HOSTNAME"; then
-    echo "✅ Success: set new hostname"
+if [[ $(hostname) != "$NEW_HOSTNAME" ]]; then
+    if hostnamectl set-hostname "$NEW_HOSTNAME"; then
+        echo "✅ Success: set new hostname"
+    else
+        echo "❌ Error: set new hostname"
+    fi
 else
-    echo "❌ Error: set new hostname"
+    echo "✅ Success: new hostname matches the old hostname, changes not needed"
 fi
 
 # update system
@@ -92,7 +96,7 @@ install_and_update() {
 
 # utilities check
 missing_pkgs=()
-for utility in curl unzip jq openssl update-ca-certificates bsdextrautils ifstat; do
+for utility in curl unzip jq openssl update-ca-certificates ifstat; do
     if ! command -v "$utility" &> /dev/null; then
         missing_pkgs+=("$utility")
     fi

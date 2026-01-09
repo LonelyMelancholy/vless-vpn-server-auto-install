@@ -35,11 +35,24 @@ on_exit() {
 # error exit log message for end log
 trap 'on_exit' EXIT
 RC=1
+readonly WAIT_SEC="$(shuf -i "10-60" -n 1)"
+readonly MAX_ATTEMPTS=3
 
 # check another instanсe of the script is not running
-readonly LOCK_FILE="/run/lock/xray_update.lock"
-exec 99> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 99 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+readonly LOCK_FILE_4="/run/lock/xray_update.lock"
+exec 99> "$LOCK_FILE_4" || { echo "❌ Error: cannot open lock file '$LOCK_FILE_4', exit"; exit 1; }
+for ((attempt=1; attempt<=MAX_ATTEMPTS; attempt++)); do
+  if flock -n 99; then
+    break
+  fi
+  if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+    echo "⚠️  Non-critical error: Lock busy ($LOCK_FILE_4). Waiting ${WAIT_SEC}s... (attempt $attempt/$MAX_ATTEMPTS)"
+    sleep "$WAIT_SEC"
+  else
+    echo "❌ Error: lock ($LOCK_FILE_4) is still busy after $MAX_ATTEMPTS attempts, exit"
+    exit 1
+  fi
+done
 
 # main variables
 readonly ASSET_DIR="/usr/local/share/xray"

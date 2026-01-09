@@ -3,5 +3,5 @@
 actionstart =
 actionstop =
 actioncheck =
-actionban = /usr/local/bin/telegram/ssh_ban_notify.sh "ban" "<ip>" "<bantime>"
-actionunban = /usr/local/bin/telegram/ssh_ban_notify.sh "unban" "<ip>" "<bantime>"
+actionban = /usr/local/bin/telegram/ssh_f2b_notify.sh "ban" "<ip>" "<bantime>"
+actionunban = /usr/local/bin/telegram/ssh_f2b_notify.sh "unban" "<ip>" "<bantime>"

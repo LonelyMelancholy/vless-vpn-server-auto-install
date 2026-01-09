@@ -27,11 +27,11 @@ echo "########## boot notify started - $DATE_START ##########"
 RC="1"
 on_exit() {
     if [[ "$RC" -eq "0" ]]; then
-        local DATE_END="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## boot notify ended - $DATE_END ##########"
+        local date_end="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## boot notify ended - $date_end ##########"
     else
-        local DATE_FAIL="$(date "+%Y-%m-%d %H:%M:%S")"
-        echo "########## boot notify failed - $DATE_FAIL ##########"
+        local date_fail="$(date "+%Y-%m-%d %H:%M:%S")"
+        echo "########## boot notify failed - $date_fail ##########"
     fi
 }
 
@@ -40,8 +40,8 @@ trap 'on_exit' EXIT
 
 # check another instanсe of the script is not running
 readonly LOCK_FILE="/run/lock/boot_notify.lock"
-exec 9> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
-flock -n 9 || { echo "❌ Error: another instance is running, exit"; exit 1; }
+exec 99> "$LOCK_FILE" || { echo "❌ Error: cannot open lock file '$LOCK_FILE', exit"; exit 1; }
+flock -n 99 || { echo "❌ Error: another instance is running, exit"; exit 1; }
 
 # check secret file, if the file is ok, we source it.
 readonly ENV_FILE="/usr/local/etc/telegram/secrets.env"
@@ -76,7 +76,7 @@ telegram_message() {
         if ! _tg_m; then
             if [[ "$attempt" -ge "$max_attempt" ]]; then
                 echo "❌ Error: failed to send Telegram message after $attempt attempts, exit"
-                return 1
+                exit 1
             fi
             sleep 60
             ((attempt++))
